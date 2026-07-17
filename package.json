@@ -1,0 +1,39 @@
+{
+	"name": "libripgrep",
+	"version": "0.1.0",
+	"description": "Native bindings for ripgrep",
+	"author": "Joshua Wise <joshuathomaswise@gmail.com>",
+	"homepage": "https://github.com/JoshuaWise/libripgrep#readme",
+	"repository": {
+		"type": "git",
+		"url": "git://github.com/JoshuaWise/libripgrep.git"
+	},
+	"license": "MIT",
+	"type": "commonjs",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"scripts": {
+		"test": "jest",
+		"prepare": "tsc",
+		"watch": "tsc --watch",
+		"prettier": "prettier --write src/**",
+		"clean": "rm -rf node_modules dist"
+	},
+	"files": [
+		"src/**",
+		"dist/**"
+	],
+	"dependencies": {},
+	"devDependencies": {
+		"@types/jest": "^30.0.0",
+		"@types/node": "^25.3.5",
+		"jest": "^30.2.0",
+		"prettier": "^3.8.1",
+		"ts-jest": "^29.4.6",
+		"typescript": "^5.9.3"
+	},
+	"jest": {
+		"preset": "ts-jest",
+		"testEnvironment": "node"
+	}
+}
