@@ -33,6 +33,10 @@ jobs:
           workspaces: native
       - name: Verify the runner matches the target
         run: test "$(node -p 'process.platform + "-" + process.arch')" = "${{ matrix.target }}"
+      # For the rg differential tests (Ubuntu runners ship with ripgrep).
+      - name: Install ripgrep
+        if: runner.os == 'macOS'
+        run: brew install ripgrep
       - run: npm ci
       - run: npm run build:native
       - run: npm run prepare
