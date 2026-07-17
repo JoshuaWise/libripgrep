@@ -138,8 +138,15 @@ status blockquote added here when it lands.
 > walkTree include/exclude globs (phase 4 will call into the same
 > `glob::compile`).
 
-### Phase 3 — grepBuffer
+### Phase 3 — compileGrep (formerly grepBuffer)
 
+- Redesigned after phase 5 (spec change in CLAUDE.md): instead of
+  `grepBuffer(data, options)` compiling the matcher on every call, the API
+  is `compileGrep(options)` returning a reusable
+  `(data: Readonly<Buffer>) => MatchedLine[]` closure, mirroring
+  compileGlob. Compilation cost (~1 ms for two patterns) is paid once;
+  validation errors (bad regex, empty patterns) throw at compile time. The
+  native side is a `GrepMatcher` napi class with a `scan(Buffer)` method.
 - Matcher: `grep-regex::RegexMatcherBuilder::build_many()` (one alternation
   matcher over all patterns), configured exactly like ripgrep's
   `matcher_rust()` (crates/core/flags/hiargs.rs): `multi_line(true)` always
@@ -169,10 +176,10 @@ status blockquote added here when it lands.
   empty matches (^, $ at EOF), astral-plane and BMP UTF-16 offsets, invalid
   UTF-8 replacement, argument validation.
 
-> **Status: implemented (awaiting review).** All of the above landed;
-> `grepBuffer` is fully functional. 68 jest tests + 2 cargo tests pass;
-> prettier/cargo fmt clean. Deferred: reuse of `search.rs` by grepTree
-> (phase 5).
+> **Status: implemented (awaiting review).** Landed as grepBuffer, then
+> redesigned to compileGrep after phase 5 per the CLAUDE.md spec change.
+> Tests updated (one-shot helper + matcher-reuse and compile-time
+> validation tests). `search.rs` is shared with grepTree.
 
 ### Phase 4 — walkTree
 
@@ -232,14 +239,15 @@ status blockquote added here when it lands.
   non-fatal error policy).
 - Benchmark (scanning location, per CLAUDE.md): ripgrep repo checkout
   (324 entries / 249 files), patterns ['fn\s+\w+', 'Result<'], warm cache,
-  median of 5:
-  - grepTree (scan on walker threads): 5.3 ms
-  - walkTree + readFile + grepBuffer (scan on main thread, 16-way read
-    concurrency): 271 ms — but ~1 ms/call of that is grepBuffer recompiling
-    the matcher per file (~249 ms total). Discounting compilation entirely,
-    the main-thread variant would still be ~22 ms (~4x slower) AND would
-    occupy the main thread for the duration. Identical results (84 files,
-    3060 matched lines). Decision: scan on walker threads.
+  median of 5, identical results both ways (84 files, 3060 matched lines):
+  - grepTree (scan on walker threads): 5.9 ms
+  - walkTree + readFile + one pre-compiled compileGrep matcher on the main
+    thread (16-way read concurrency): 15.5 ms (~2.6x slower), and it
+    occupies the main thread for the duration while grepTree leaves it
+    essentially idle. (Pre-redesign datapoint: with grepBuffer recompiling
+    the matcher per file at ~1 ms/call, this variant measured 271 ms —
+    that compilation overhead motivated the compileGrep redesign.)
+  - Decision: scan on walker threads.
 - Tests (18): match details/offsets per file, dirs never yielded, root
   file, nonexistent root, regexOptions plumbing (multiline, crlf+ci,
   invalid regex, empty patterns), binary skip, UTF-16 BOM files,

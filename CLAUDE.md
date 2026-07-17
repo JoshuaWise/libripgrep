@@ -135,8 +135,10 @@ interface MatchedLine {
     matches: [number, number][]; // The start/end pair of indices of each match found within the line: UTF-16 code-unit offsets within the `line` string (e.g., for String.prototype.slice())
 }
 
-// Scans the given buffer for all lines matching any of the given regexes.
-function grepBuffer(data: Readonly<Buffer>, options: GrepOptions): MatchedLine[];
+// Compiles the given regular expressions and returns a corresponding matcher
+// function that can be run any number of times on raw Buffers, to find all
+// lines matching any of the given regexes.
+function compileGrep(options: GrepOptions): (data: Readonly<Buffer>) => MatchedLine[];
 
 interface GrepTreeOptions extends GrepOptions {
     // Ignore files larger than this size in bytes. Default is 16 MiB.
@@ -159,9 +161,9 @@ interface GrepTreeResult {
 async function* grepTree(rootPath: string, options: GrepTreeOptions): AsyncGenerator<GrepTreeResult>;
 ```
 
-> In `grepBuffer()` and `grepTree()`, file encodings should be detected automatically based on the BOM (UTF-16 BE, UTF-16 LE, or UTF-8). No other detection should be performed. UTF-8 should be assumed if there's no BOM.
+> In `compileGrep()` and `grepTree()`, file encodings should be detected automatically based on the BOM (UTF-16 BE, UTF-16 LE, or UTF-8). No other detection should be performed. UTF-8 should be assumed if there's no BOM.
 
-> In `grepBuffer()` and `grepTree()`, never search binary files. Use ripgrep's default behavior of detecting NUL bytes to identify binary files and ignore them.
+> In `compileGrep()` and `grepTree()`, never search binary files. Use ripgrep's default behavior of detecting NUL bytes to identify binary files and ignore them.
 
 > When traversing directories, never treat dotfiles any differently from regular files. In other words, always behave as if ripgrep's `--hidden` option was provided. Dotfiles can still naturally be excluded by using an `includeGlobs` glob of `**` with `explicitDotfiles: true`.
 

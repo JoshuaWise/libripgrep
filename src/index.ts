@@ -11,7 +11,7 @@ if (!SUPPORTED_PLATFORMS.includes(platformArch)) {
 
 const native: NativeBinding = require(`../prebuilds/${platformArch}/libripgrep.node`);
 
-export const { compileGlob, grepBuffer, walkTree, grepTree } = makeApi(native);
+export const { compileGlob, compileGrep, walkTree, grepTree } = makeApi(native);
 export type {
 	GlobOptions,
 	GrepOptions,

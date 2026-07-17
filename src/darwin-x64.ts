@@ -5,7 +5,7 @@ import type { NativeBinding } from './binding';
 // platform auto-detection anywhere in its require graph.
 const native: NativeBinding = require('../prebuilds/darwin-x64/libripgrep.node');
 
-export const { compileGlob, grepBuffer, walkTree, grepTree } = makeApi(native);
+export const { compileGlob, compileGrep, walkTree, grepTree } = makeApi(native);
 export type {
 	GlobOptions,
 	GrepOptions,

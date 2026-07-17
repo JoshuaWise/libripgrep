@@ -90,7 +90,7 @@ export interface RegexOptions {
 	readonly unicode?: boolean;
 }
 
-// Options controlling what grepBuffer() and grepTree() search for.
+// Options controlling what compileGrep() and grepTree() search for.
 export interface GrepOptions {
 	// The regex patterns to search for.
 	// Lines matching at least one pattern are returned.

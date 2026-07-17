@@ -53,7 +53,7 @@ pub fn compile_glob(glob_pattern: String, options: GlobOptions) -> Result<GlobMa
     Ok(GlobMatcher { re })
 }
 
-// Fully-resolved options for grepBuffer/grepTree regexes; mirrors
+// Fully-resolved options for compileGrep/grepTree regexes; mirrors
 // ResolvedRegexOptions in src/binding.ts.
 #[napi(object)]
 pub struct RegexOptions {
@@ -84,29 +84,49 @@ pub struct MatchedLine {
     pub matches: Vec<Vec<u32>>,
 }
 
-// Scans the given buffer for all lines matching any of the given regexes,
-// throwing on invalid patterns.
-#[napi]
-pub fn grep_buffer(
-    data: Buffer,
-    patterns: Vec<String>,
-    options: RegexOptions,
-) -> Result<Vec<MatchedLine>> {
-    let config = options.to_config();
-    let matcher = search::build_matcher(&patterns, &config).map_err(Error::from_reason)?;
-    let decoded = search::decode_bom(data.as_ref());
-    if search::is_binary(&decoded) {
-        return Ok(vec![]);
-    }
-    let lines = search::search_lines(&matcher, config.crlf, &decoded);
-    Ok(lines
-        .into_iter()
-        .map(|m| MatchedLine {
+impl From<search::LineMatch> for MatchedLine {
+    fn from(m: search::LineMatch) -> MatchedLine {
+        MatchedLine {
             line: m.line,
             line_number: m.line_number,
             matches: m.matches.into_iter().map(|(s, e)| vec![s, e]).collect(),
-        })
-        .collect())
+        }
+    }
+}
+
+// A compiled set of grep patterns that can scan any number of buffers.
+#[napi]
+pub struct GrepMatcher {
+    matcher: grep_regex::RegexMatcher,
+    crlf: bool,
+}
+
+#[napi]
+impl GrepMatcher {
+    // Scans the given buffer for all lines matching any of the patterns.
+    #[napi]
+    pub fn scan(&self, data: Buffer) -> Vec<MatchedLine> {
+        let decoded = search::decode_bom(data.as_ref());
+        if search::is_binary(&decoded) {
+            return vec![];
+        }
+        search::search_lines(&self.matcher, self.crlf, &decoded)
+            .into_iter()
+            .map(MatchedLine::from)
+            .collect()
+    }
+}
+
+// Compiles the given regexes into a reusable matcher, throwing on invalid
+// patterns.
+#[napi]
+pub fn compile_grep(patterns: Vec<String>, options: RegexOptions) -> Result<GrepMatcher> {
+    let config = options.to_config();
+    let matcher = search::build_matcher(&patterns, &config).map_err(Error::from_reason)?;
+    Ok(GrepMatcher {
+        matcher,
+        crlf: config.crlf,
+    })
 }
 
 // Fully-resolved options for walkTree; mirrors ResolvedWalkOptions in
@@ -278,15 +298,7 @@ impl Task for NextGrepBatchTask {
                 .map(|item| GrepTreeEntry {
                     path: item.entry.path,
                     file_type: item.entry.file_type,
-                    matches: item
-                        .matches
-                        .into_iter()
-                        .map(|m| MatchedLine {
-                            line: m.line,
-                            line_number: m.line_number,
-                            matches: m.matches.into_iter().map(|(s, e)| vec![s, e]).collect(),
-                        })
-                        .collect(),
+                    matches: item.matches.into_iter().map(MatchedLine::from).collect(),
                 })
                 .collect()
         }))

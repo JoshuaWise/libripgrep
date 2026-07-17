@@ -37,6 +37,11 @@ export interface NativeGlobMatcher {
 	isMatch(relativePath: string): boolean;
 }
 
+// A compiled grep handle returned by the native addon.
+export interface NativeGrepMatcher {
+	scan(data: Readonly<Buffer>): MatchedLine[];
+}
+
 // One walked entry; name/parentPath are derived from `path` in JS, and
 // `fileType` uses the codes from file_type_code() in native/src/walk.rs.
 export interface NativeWalkEntry {
@@ -75,11 +80,10 @@ export interface NativeGrepWalk {
 // will be fleshed out as each implementation phase lands.
 export interface NativeBinding {
 	compileGlob(globPattern: string, options: ResolvedGlobOptions): NativeGlobMatcher;
-	grepBuffer(
-		data: Readonly<Buffer>,
+	compileGrep(
 		patterns: ReadonlyArray<string>,
 		options: ResolvedRegexOptions
-	): MatchedLine[];
+	): NativeGrepMatcher;
 	walkTree(rootPath: string, options: ResolvedWalkOptions): NativeWalk;
 	grepTree(rootPath: string, options: ResolvedGrepTreeOptions): NativeGrepWalk;
 }

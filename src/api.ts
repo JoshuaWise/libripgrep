@@ -27,8 +27,10 @@ export interface LibRipgrep {
 		options?: GlobOptions
 	): (relativePath: string) => boolean;
 
-	// Scans the given buffer for all lines matching any of the given regexes.
-	grepBuffer(data: Readonly<Buffer>, options: GrepOptions): MatchedLine[];
+	// Compiles the given regular expressions and returns a corresponding
+	// matcher function that can be run any number of times on raw Buffers,
+	// to find all lines matching any of the given regexes.
+	compileGrep(options: GrepOptions): (data: Readonly<Buffer>) => MatchedLine[];
 
 	// Yields a TreeEntry for the given 'rootPath' and every file and
 	// directory found within it, recursively (subject to the given options).
@@ -150,15 +152,15 @@ export function makeApi(native: NativeBinding): LibRipgrep {
 			const matcher = native.compileGlob(globPattern, resolveGlobOptions(options));
 			return (relativePath) => matcher.isMatch(relativePath);
 		},
-		grepBuffer(data, options) {
+		compileGrep(options) {
 			if (options.patterns.length === 0) {
 				throw new TypeError('At least one pattern is required');
 			}
-			return native.grepBuffer(
-				data,
+			const matcher = native.compileGrep(
 				options.patterns,
 				resolveRegexOptions(options.regexOptions)
 			);
+			return (data) => matcher.scan(data);
 		},
 		async *walkTree(rootPath, options) {
 			const walk = native.walkTree(rootPath, resolveWalkOptions(options));
