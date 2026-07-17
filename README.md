@@ -139,6 +139,8 @@ npm install            # also compiles TypeScript (prepare)
 npm run build:native   # cargo build + copy into prebuilds/ (requires Rust)
 npm test               # jest
 npm run prettier
+npm rust-test          # cargo test
+npm rust-fmt           # cargo fmt
 node bench/grep-tree.js <dir> # benchmark vs rg and naive Node
 ```
 

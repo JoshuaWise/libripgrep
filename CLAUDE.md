@@ -182,10 +182,11 @@ async function* grepTree(rootPath: string, options: GrepTreeOptions): AsyncGener
 ## Dev Commands
 
 - **Compile TS to JS:** `npm run prepare`
-- **Test:** `npm run test`
-- **Prettier:** `npm run prettier`
+- **Compile Rust:** `npm run build:native`
+- **Test:** `npm run test`, `npm run rust-test`
+- **Prettier:** `npm run prettier`, `npm run rust-fmt`
 
-> Coding agents like Claude Code should always use `--runInBand` when running tests, because Claude Code is often run in a memory-constrained sandbox. Using `--runInBand` avoids crashing due to memory exhaustion.
+> Coding agents like Claude Code should always use `--runInBand` when running jest tests, because Claude Code is often run in a memory-constrained sandbox. Using `--runInBand` avoids crashing due to memory exhaustion.
 
 ## Coding Rules
 
@@ -193,7 +194,7 @@ async function* grepTree(rootPath: string, options: GrepTreeOptions): AsyncGener
 - In `catch` blocks, always check the specific error type/code that is relevant. For example, for filesystem operations, prefer to explicitly check error codes like `ENOENT` instead of writing catch-all blocks.
 - Never use `__dirname`, `__filename`, `require.resolve()`, or `require.resolve()`.
 - **MANDATORY:** Run relevant tests after every implementation.
-- **MANDATORY:** Run prettier and ALL tests before committing.
+- **MANDATORY:** Run prettier, cargo fmt, and ALL tests before committing.
 
 ### Comments
 

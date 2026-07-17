@@ -123,9 +123,9 @@ impl GrepMatcher {
             self.after_context as usize,
             &decoded,
         )
-            .into_iter()
-            .map(MatchedLine::from)
-            .collect()
+        .into_iter()
+        .map(MatchedLine::from)
+        .collect()
     }
 }
 
@@ -377,13 +377,8 @@ pub fn grep_tree(root_path: String, options: GrepTreeOptions) -> Result<GrepWalk
                 }
             }
         }
-        let matches = search::search_file(
-            &matcher,
-            crlf,
-            before_context,
-            after_context,
-            entry.path(),
-        )?;
+        let matches =
+            search::search_file(&matcher, crlf, before_context, after_context, entry.path())?;
         Some(GrepItem {
             entry: walk::entry_data(entry),
             matches,
