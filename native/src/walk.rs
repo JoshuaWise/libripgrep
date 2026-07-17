@@ -22,6 +22,7 @@ pub struct WalkConfig {
     pub threads: usize,
     pub symlinks: bool,
     pub max_depth: Option<usize>,
+    pub max_filesize: Option<u64>,
     pub ignore_files: Vec<String>,
     pub ignore_style: IgnoreStyle,
     pub include: Vec<Regex>,
@@ -34,30 +35,47 @@ pub struct EntryData {
     pub file_type: u32,
 }
 
-enum WalkMessage {
-    Entry(EntryData),
+// Builds the wire format for one entry.
+pub fn entry_data(entry: &ignore::DirEntry) -> EntryData {
+    EntryData {
+        path: entry.path().to_string_lossy().into_owned(),
+        file_type: file_type_code(entry),
+    }
+}
+
+enum WalkMessage<T> {
+    Item(T),
     // Sent only when the very first result is an error (e.g. the root does
     // not exist); later errors are skipped like ripgrep skips unreadable
     // directories.
     FatalError(String),
 }
 
-// A running directory walk. Dropping it disconnects the channel, which
-// also unwinds the walker threads; cancel() just does so promptly.
-pub struct WalkStream {
-    rx: Receiver<WalkMessage>,
+// A running directory walk producing mapped items. Dropping it disconnects
+// the channel, which also unwinds the walker threads; cancel() just does so
+// promptly.
+pub struct WalkStream<T> {
+    rx: Receiver<WalkMessage<T>>,
     cancelled: Arc<AtomicBool>,
 }
 
 // Configures the walker the way ripgrep does (see walk_builder() in
 // ripgrep's crates/core/flags/hiargs.rs), spawns it on its own threads, and
-// returns the receiving stream. Never treats hidden files specially, and
-// only respects .gitignore inside real git repositories (require_git).
-pub fn start_walk(root: String, config: WalkConfig) -> Result<WalkStream, String> {
+// returns the receiving stream. Each entry is transformed by `map` on the
+// walker threads (where grepTree also reads and searches file contents);
+// entries mapped to None are not streamed. Never treats hidden files
+// specially, and only respects .gitignore inside real git repositories
+// (require_git).
+pub fn start_walk<T, F>(root: String, config: WalkConfig, map: F) -> Result<WalkStream<T>, String>
+where
+    T: Send + 'static,
+    F: Fn(&ignore::DirEntry) -> Option<T> + Send + Sync + 'static,
+{
     let mut builder = WalkBuilder::new(&root);
     builder
         .follow_links(config.symlinks)
         .max_depth(config.max_depth)
+        .max_filesize(config.max_filesize)
         .threads(config.threads)
         .hidden(false);
     match config.ignore_style {
@@ -114,16 +132,18 @@ pub fn start_walk(root: String, config: WalkConfig) -> Result<WalkStream, String
         });
     }
 
-    let (tx, rx) = bounded::<WalkMessage>(CHANNEL_CAPACITY);
+    let (tx, rx) = bounded::<WalkMessage<T>>(CHANNEL_CAPACITY);
     let cancelled = Arc::new(AtomicBool::new(false));
     let walker = builder.build_parallel();
     let thread_cancelled = Arc::clone(&cancelled);
     std::thread::spawn(move || {
         let emitted_any = AtomicBool::new(false);
+        let map = map;
         walker.run(|| {
             let tx = tx.clone();
             let cancelled = &thread_cancelled;
             let emitted_any = &emitted_any;
+            let map = &map;
             Box::new(move |result| {
                 if cancelled.load(Ordering::Relaxed) {
                     return WalkState::Quit;
@@ -131,12 +151,10 @@ pub fn start_walk(root: String, config: WalkConfig) -> Result<WalkStream, String
                 match result {
                     Ok(entry) => {
                         emitted_any.store(true, Ordering::Relaxed);
-                        let data = EntryData {
-                            path: entry.path().to_string_lossy().into_owned(),
-                            file_type: file_type_code(&entry),
-                        };
-                        if tx.send(WalkMessage::Entry(data)).is_err() {
-                            return WalkState::Quit;
+                        if let Some(item) = map(&entry) {
+                            if tx.send(WalkMessage::Item(item)).is_err() {
+                                return WalkState::Quit;
+                            }
                         }
                         WalkState::Continue
                     }
@@ -156,12 +174,12 @@ pub fn start_walk(root: String, config: WalkConfig) -> Result<WalkStream, String
     Ok(WalkStream { rx, cancelled })
 }
 
-impl WalkStream {
-    // Blocks until at least one entry is available, then greedily drains up
-    // to `max` entries. Returns None when the walk is complete.
-    pub fn next_batch(&self, max: usize) -> Result<Option<Vec<EntryData>>, String> {
+impl<T> WalkStream<T> {
+    // Blocks until at least one item is available, then greedily drains up
+    // to `max` items. Returns None when the walk is complete.
+    pub fn next_batch(&self, max: usize) -> Result<Option<Vec<T>>, String> {
         let first = match self.rx.recv() {
-            Ok(WalkMessage::Entry(entry)) => entry,
+            Ok(WalkMessage::Item(item)) => item,
             Ok(WalkMessage::FatalError(message)) => return Err(message),
             Err(_) => return Ok(None),
         };
@@ -169,7 +187,7 @@ impl WalkStream {
         batch.push(first);
         while batch.len() < max {
             match self.rx.try_recv() {
-                Ok(WalkMessage::Entry(entry)) => batch.push(entry),
+                Ok(WalkMessage::Item(item)) => batch.push(item),
                 Ok(WalkMessage::FatalError(message)) => return Err(message),
                 Err(_) => break,
             }

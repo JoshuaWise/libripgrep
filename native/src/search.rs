@@ -94,6 +94,26 @@ pub fn is_binary(data: &[u8]) -> bool {
     memchr::memchr(b'\x00', data).is_some()
 }
 
+// Reads and searches one file (no mmap), returning None if it is
+// unreadable, binary, or has no matching lines. Runs on walker threads.
+pub fn search_file(
+    matcher: &RegexMatcher,
+    crlf: bool,
+    path: &std::path::Path,
+) -> Option<Vec<LineMatch>> {
+    let data = std::fs::read(path).ok()?;
+    let decoded = decode_bom(&data);
+    if is_binary(&decoded) {
+        return None;
+    }
+    let matches = search_lines(matcher, crlf, &decoded);
+    if matches.is_empty() {
+        None
+    } else {
+        Some(matches)
+    }
+}
+
 /*
 Scans `data` (assumed UTF-8) for all lines with at least one match. Matches
 come from a single find_iter pass over the whole buffer (non-overlapping,

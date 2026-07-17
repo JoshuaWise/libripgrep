@@ -50,6 +50,26 @@ export interface NativeWalk {
 	cancel(): void;
 }
 
+// GrepTreeOptions with every documented default already applied.
+// `maxFileSize` is undefined for unlimited, matching napi's Option.
+export interface ResolvedGrepTreeOptions {
+	patterns: string[];
+	regexOptions: ResolvedRegexOptions;
+	maxFileSize: number | undefined;
+	walkOptions: ResolvedWalkOptions;
+}
+
+// One matched file produced by the native grep walk.
+export interface NativeGrepTreeEntry extends NativeWalkEntry {
+	matches: MatchedLine[];
+}
+
+// A running native grep walk; next() resolves null when complete.
+export interface NativeGrepWalk {
+	next(): Promise<NativeGrepTreeEntry[] | null>;
+	cancel(): void;
+}
+
 // The shape of the native addon (prebuilds/<platform>-<arch>/libripgrep.node).
 // Entry points still marked `never` are stubs that always throw; signatures
 // will be fleshed out as each implementation phase lands.
@@ -61,5 +81,5 @@ export interface NativeBinding {
 		options: ResolvedRegexOptions
 	): MatchedLine[];
 	walkTree(rootPath: string, options: ResolvedWalkOptions): NativeWalk;
-	grepTree(): never;
+	grepTree(rootPath: string, options: ResolvedGrepTreeOptions): NativeGrepWalk;
 }

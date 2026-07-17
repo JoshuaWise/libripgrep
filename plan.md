@@ -218,17 +218,38 @@ status blockquote added here when it lands.
 
 ### Phase 5 — grepTree
 
-- Same traversal as phase 4, but worker threads also open + search each
-  candidate file (skip files > maxFileSize, default 16 MiB) using the
-  phase 3 searcher configuration; results stream back as
-  `{ entry, matches }` per file with >= 1 match.
-- All reads off the main thread. Benchmark (per CLAUDE.md) whether regex
-  scanning belongs on the walker threads or the main thread — expectation:
-  scanning on walker threads wins; record the numbers in this file.
-- Tests: end-to-end fixtures (ignores + globs + size cap + binary skip +
-  BOM files), streaming order-independence, cancellation, error paths
-  (unreadable files are skipped like ripgrep does, surfaced how ripgrep
-  surfaces them — decide and document).
+- The phase-4 walker generalized to `WalkStream<T>` with a per-entry `map`
+  closure that runs on the walker threads. walkTree maps every entry to its
+  wire format; grepTree maps regular files (only) to read (std::fs::read, no
+  mmap) -> BOM decode -> NUL binary check -> phase-3 `search_lines`, so only
+  files with >= 1 matching line ever cross the channel/FFI. Same pull-based
+  batching, backpressure, fatal-root-error, and cancellation semantics.
+- maxFileSize (default 16 MiB; Infinity = unlimited) uses the walker's
+  native `max_filesize` filter, plus an explicit depth-0 check because the
+  parallel walker doesn't apply the filter to a root file. The limit is
+  strictly "larger than" (equal-size files are searched), matching the
+  crate. Unreadable files are skipped silently (consistent with phase 4's
+  non-fatal error policy).
+- Benchmark (scanning location, per CLAUDE.md): ripgrep repo checkout
+  (324 entries / 249 files), patterns ['fn\s+\w+', 'Result<'], warm cache,
+  median of 5:
+  - grepTree (scan on walker threads): 5.3 ms
+  - walkTree + readFile + grepBuffer (scan on main thread, 16-way read
+    concurrency): 271 ms — but ~1 ms/call of that is grepBuffer recompiling
+    the matcher per file (~249 ms total). Discounting compilation entirely,
+    the main-thread variant would still be ~22 ms (~4x slower) AND would
+    occupy the main thread for the duration. Identical results (84 files,
+    3060 matched lines). Decision: scan on walker threads.
+- Tests (18): match details/offsets per file, dirs never yielded, root
+  file, nonexistent root, regexOptions plumbing (multiline, crlf+ci,
+  invalid regex, empty patterns), binary skip, UTF-16 BOM files,
+  maxFileSize (boundary, root file, Infinity, validation), walkOptions
+  plumbing (gitignore, globs, maxDepth, symlinks), unreadable-file skip
+  (non-root only), early-exit cancellation.
+
+> **Status: implemented (awaiting review).** All of the above landed;
+> `grepTree` is fully functional. 117 jest tests + 2 cargo tests pass;
+> prettier/cargo fmt clean. Deferred: nothing within this phase.
 
 ### Phase 6 — Prebuilds & packaging
 

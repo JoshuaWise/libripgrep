@@ -3,6 +3,7 @@ import type {
 	NativeBinding,
 	NativeWalkEntry,
 	ResolvedGlobOptions,
+	ResolvedGrepTreeOptions,
 	ResolvedRegexOptions,
 	ResolvedWalkOptions,
 } from './binding';
@@ -88,6 +89,24 @@ function resolveWalkOptions(options?: WalkOptions): ResolvedWalkOptions {
 	};
 }
 
+// Applies the defaults documented on GrepTreeOptions and validates
+// maxFileSize (Infinity means no limit).
+function resolveGrepTreeOptions(options: GrepTreeOptions): ResolvedGrepTreeOptions {
+	if (options.patterns.length === 0) {
+		throw new TypeError('At least one pattern is required');
+	}
+	const maxFileSize = options.maxFileSize ?? 16 * 1024 * 1024;
+	if (maxFileSize !== Infinity && (!Number.isInteger(maxFileSize) || maxFileSize < 0)) {
+		throw new TypeError('maxFileSize must be a non-negative integer or Infinity');
+	}
+	return {
+		patterns: [...options.patterns],
+		regexOptions: resolveRegexOptions(options.regexOptions),
+		maxFileSize: maxFileSize === Infinity ? undefined : maxFileSize,
+		walkOptions: resolveWalkOptions(options.walkOptions),
+	};
+}
+
 // File type codes shared with file_type_code() in native/src/walk.rs.
 class TreeEntryImpl implements TreeEntry {
 	readonly name: string;
@@ -154,8 +173,18 @@ export function makeApi(native: NativeBinding): LibRipgrep {
 				walk.cancel();
 			}
 		},
-		async *grepTree(_rootPath, _options) {
-			native.grepTree();
+		async *grepTree(rootPath, options) {
+			const grep = native.grepTree(rootPath, resolveGrepTreeOptions(options));
+			try {
+				let batch;
+				while ((batch = await grep.next()) !== null) {
+					for (const item of batch) {
+						yield { entry: new TreeEntryImpl(item), matches: item.matches };
+					}
+				}
+			} finally {
+				grep.cancel();
+			}
 		},
 	};
 }

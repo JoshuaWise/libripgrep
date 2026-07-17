@@ -139,6 +139,7 @@ impl WalkOptions {
             threads: (self.threads as usize).max(1),
             symlinks: self.symlinks,
             max_depth: self.max_depth.map(|depth| depth as usize),
+            max_filesize: None,
             ignore_files: self.ignore_files.clone(),
             ignore_style: match self.ignore_style.as_str() {
                 "all" => walk::IgnoreStyle::All,
@@ -169,7 +170,7 @@ const WALK_BATCH_SIZE: usize = 256;
 // Resolves batches of walked entries off the main thread by blocking on the
 // walker's channel from the libuv thread pool.
 pub struct NextBatchTask {
-    stream: Arc<walk::WalkStream>,
+    stream: Arc<walk::WalkStream<walk::EntryData>>,
 }
 
 impl Task for NextBatchTask {
@@ -198,7 +199,7 @@ impl Task for NextBatchTask {
 // A running directory walk, consumed by the walkTree async generator.
 #[napi]
 pub struct Walk {
-    stream: Arc<walk::WalkStream>,
+    stream: Arc<walk::WalkStream<walk::EntryData>>,
 }
 
 #[napi]
@@ -222,14 +223,133 @@ impl Walk {
 // unreadable ignore files, or an invalid ignoreStyle.
 #[napi]
 pub fn walk_tree(root_path: String, options: WalkOptions) -> Result<Walk> {
-    let stream = walk::start_walk(root_path, options.to_config()?).map_err(Error::from_reason)?;
+    let stream = walk::start_walk(root_path, options.to_config()?, |entry| {
+        Some(walk::entry_data(entry))
+    })
+    .map_err(Error::from_reason)?;
     Ok(Walk {
         stream: Arc::new(stream),
     })
 }
 
-// Stub for phase 5: will walk and search file contents.
+// Fully-resolved options for grepTree; mirrors ResolvedGrepTreeOptions in
+// src/binding.ts. `max_file_size` is None for unlimited.
+#[napi(object)]
+pub struct GrepTreeOptions {
+    pub patterns: Vec<String>,
+    pub regex_options: RegexOptions,
+    pub max_file_size: Option<i64>,
+    pub walk_options: WalkOptions,
+}
+
+// One matched file produced by the grepTree walker threads.
+pub struct GrepItem {
+    entry: walk::EntryData,
+    matches: Vec<search::LineMatch>,
+}
+
+// A matched file in wire format; JS wraps it into a GrepTreeResult.
+#[napi(object)]
+pub struct GrepTreeEntry {
+    pub path: String,
+    pub file_type: u32,
+    pub matches: Vec<MatchedLine>,
+}
+
+// Resolves batches of matched files off the main thread, like NextBatchTask.
+pub struct NextGrepBatchTask {
+    stream: Arc<walk::WalkStream<GrepItem>>,
+}
+
+impl Task for NextGrepBatchTask {
+    type Output = Option<Vec<GrepItem>>;
+    type JsValue = Option<Vec<GrepTreeEntry>>;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        self.stream
+            .next_batch(WALK_BATCH_SIZE)
+            .map_err(Error::from_reason)
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(output.map(|batch| {
+            batch
+                .into_iter()
+                .map(|item| GrepTreeEntry {
+                    path: item.entry.path,
+                    file_type: item.entry.file_type,
+                    matches: item
+                        .matches
+                        .into_iter()
+                        .map(|m| MatchedLine {
+                            line: m.line,
+                            line_number: m.line_number,
+                            matches: m.matches.into_iter().map(|(s, e)| vec![s, e]).collect(),
+                        })
+                        .collect(),
+                })
+                .collect()
+        }))
+    }
+}
+
+// A running grep walk, consumed by the grepTree async generator.
 #[napi]
-pub fn grep_tree() -> Result<()> {
-    Err(Error::from_reason("grepTree is not implemented yet"))
+pub struct GrepWalk {
+    stream: Arc<walk::WalkStream<GrepItem>>,
+}
+
+#[napi]
+impl GrepWalk {
+    // Resolves the next batch of matched files, or null when done.
+    #[napi]
+    pub fn next(&self) -> AsyncTask<NextGrepBatchTask> {
+        AsyncTask::new(NextGrepBatchTask {
+            stream: Arc::clone(&self.stream),
+        })
+    }
+
+    // Stops the walk promptly; safe to call at any time.
+    #[napi]
+    pub fn cancel(&self) {
+        self.stream.cancel();
+    }
+}
+
+// Starts a recursive content search on background threads. The walker
+// threads read and search candidate files; only files with at least one
+// matching line are streamed back.
+#[napi]
+pub fn grep_tree(root_path: String, options: GrepTreeOptions) -> Result<GrepWalk> {
+    let mut config = options.walk_options.to_config()?;
+    let max_filesize = options.max_file_size.map(|size| size as u64);
+    config.max_filesize = max_filesize;
+    let regex_config = options.regex_options.to_config();
+    let matcher =
+        search::build_matcher(&options.patterns, &regex_config).map_err(Error::from_reason)?;
+    let crlf = regex_config.crlf;
+    let stream = walk::start_walk(root_path, config, move |entry| {
+        let file_type = entry.file_type()?;
+        if !file_type.is_file() {
+            return None;
+        }
+        // The parallel walker doesn't apply max_filesize to a root file, so
+        // enforce it here.
+        if entry.depth() == 0 {
+            if let Some(max) = max_filesize {
+                if entry.metadata().ok()?.len() > max {
+                    return None;
+                }
+            }
+        }
+        let matches = search::search_file(&matcher, crlf, entry.path())?;
+        Some(GrepItem {
+            entry: walk::entry_data(entry),
+            matches,
+        })
+    })
+    .map_err(Error::from_reason)?;
+    Ok(GrepWalk {
+        stream: Arc::new(stream),
+    })
 }
