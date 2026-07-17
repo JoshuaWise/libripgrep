@@ -208,6 +208,19 @@ describe('walkOptions plumbing', () => {
 		expect([...results.keys()]).toEqual(['kept.txt']);
 	});
 
+	test('includeGlobs finds nested files without matching directories', async () => {
+		await makeTree(root, {
+			'a.txt': 'hello\n',
+			'a.md': 'hello\n',
+			'foo/bar/baz.txt': 'hello\n',
+		});
+		const results = await grepPaths(root, {
+			patterns: ['hello'],
+			walkOptions: { includeGlobs: ['**/*.txt'] },
+		});
+		expect([...results.keys()]).toEqual(['a.txt', 'foo/bar/baz.txt']);
+	});
+
 	test('include/exclude globs apply', async () => {
 		await makeTree(root, {
 			'a.txt': 'hello\n',

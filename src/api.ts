@@ -59,7 +59,7 @@ function resolveRegexOptions(options?: RegexOptions): ResolvedRegexOptions {
 		caseInsensitive: options?.caseInsensitive ?? false,
 		multiline: options?.multiline ?? false,
 		multilineDotall: options?.multilineDotall ?? false,
-		crlf: options?.crlf ?? false,
+		crlf: options?.crlf ?? true,
 		unicode: options?.unicode ?? true,
 	};
 }

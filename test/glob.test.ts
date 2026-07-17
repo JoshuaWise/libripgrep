@@ -62,6 +62,26 @@ describe('basic matching', () => {
 		expect(m('a.rs')).toBe(false);
 	});
 
+	test('alternates can be nested', () => {
+		const m = compileGlob('{a,{b,c}}');
+		expect(m('a')).toBe(true);
+		expect(m('b')).toBe(true);
+		expect(m('c')).toBe(true);
+		expect(m('d')).toBe(false);
+		const suffixed = compileGlob('*.{js,{ts,tsx}}');
+		expect(suffixed('x.js')).toBe(true);
+		expect(suffixed('x.ts')).toBe(true);
+		expect(suffixed('x.tsx')).toBe(true);
+		expect(suffixed('x.rs')).toBe(false);
+	});
+
+	test('alternates can contain separators and globs', () => {
+		const m = compileGlob('{src/**,test}/x.js');
+		expect(m('src/a/x.js')).toBe(true);
+		expect(m('test/x.js')).toBe(true);
+		expect(m('other/x.js')).toBe(false);
+	});
+
 	test('matcher is reusable', () => {
 		const m = compileGlob('*.txt');
 		for (let i = 0; i < 3; i++) {
@@ -233,6 +253,15 @@ describe('explicitDotfiles', () => {
 		const lit = compileGlob('{.env,*.txt}', { explicitDotfiles: true });
 		expect(lit('.env')).toBe(true);
 		expect(lit('.other.txt')).toBe(false);
+	});
+
+	test('nested alternates inherit the segment-start constraint', () => {
+		const m = compileGlob('{.env,{*.js,*.ts}}', { explicitDotfiles: true });
+		expect(m('.env')).toBe(true);
+		expect(m('a.js')).toBe(true);
+		expect(m('a.ts')).toBe(true);
+		expect(m('.js')).toBe(false);
+		expect(m('.a.ts')).toBe(false);
 	});
 });
 

@@ -303,19 +303,21 @@ describe('include/exclude globs', () => {
 		expect(paths).toContain('nested/sub/y.txt');
 	});
 
-	test('includeGlobs requires files and directories to match', async () => {
-		await makeTree(root, { 'a.txt': 'x', 'b.log': 'x', 'sub/c.txt': 'x' });
-		// 'sub' does not match '*.txt', so it is pruned entirely.
-		expect(await walkPaths(root, { includeGlobs: ['*.txt'] })).toEqual([
+	test('includeGlobs gates yielding but never traversal', async () => {
+		await makeTree(root, { 'a.txt': 'x', 'b.log': 'x', 'foo/bar/baz.txt': 'x' });
+		// Intermediate directories don't match '**/*.txt', but are still
+		// descended; they just aren't yielded themselves.
+		expect(await walkPaths(root, { includeGlobs: ['**/*.txt'] })).toEqual([
 			'.',
 			'a.txt',
+			'foo/bar/baz.txt',
 		]);
-		// Adding a glob that matches directories lets the walk descend.
-		expect(await walkPaths(root, { includeGlobs: ['**/*.txt', 'sub'] })).toEqual([
+		// Directories are yielded when they match an include glob.
+		expect(await walkPaths(root, { includeGlobs: ['**/*.txt', 'foo'] })).toEqual([
 			'.',
 			'a.txt',
-			'sub',
-			'sub/c.txt',
+			'foo',
+			'foo/bar/baz.txt',
 		]);
 	});
 

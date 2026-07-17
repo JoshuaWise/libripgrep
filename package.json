@@ -39,7 +39,7 @@
 		"prepare": "tsc",
 		"watch": "tsc --watch",
 		"build:native": "bash scripts/build-native.sh",
-		"prettier": "prettier --write src/** test/**",
+		"prettier": "prettier --write src/** test/** bench/**",
 		"clean": "rm -rf node_modules dist prebuilds native/target"
 	},
 	"files": [

@@ -81,8 +81,10 @@ interface WalkOptions {
     // respected in actual git repositories.
     readonly ignoreStyle?: 'all' | 'no-git' | 'none';
 
-    // If provided, only search and return files and directories that match at
-    // least one of these globs.
+    // If provided, only return files and directories that match at least one
+    // of these globs. Directories that don't match are still traversed (like
+    // ripgrep), so matching files within them are found; the directories
+    // themselves just aren't yielded.
     readonly includeGlobs?: ReadonlyArray<string>;
 
     // If provided, don't search or return files or directories that match any
@@ -113,7 +115,7 @@ interface RegexOptions {
     readonly multilineDotall?: boolean;
 
     // Treat CRLF (`\r\n`) as a line terminator instead of just `\n`.
-    // This affects how lines are detected in multiline mode. Default false.
+    // This affects how lines are detected in multiline mode. Default true.
     readonly crlf?: boolean;
 
     // Enables unicode mode for regexp patterns. Default true.

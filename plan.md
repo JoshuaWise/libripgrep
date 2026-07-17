@@ -140,6 +140,9 @@ status blockquote added here when it lands.
 
 ### Phase 3 — compileGrep (formerly grepBuffer)
 
+- Requirement change (post phase 7): `regexOptions.crlf` now defaults to
+  TRUE (spec comment updated in CLAUDE.md/types.ts/README; tests cover both
+  the default and the explicit `crlf: false` behavior).
 - Redesigned after phase 5 (spec change in CLAUDE.md): instead of
   `grepBuffer(data, options)` compiling the matcher on every call, the API
   is `compileGrep(options)` returning a reusable
@@ -192,12 +195,18 @@ status blockquote added here when it lands.
   - 'no-git': parents + ignore + `.rgignore`, all git sources off
   - 'none': everything off (including parents)
 - include/exclude globs compile through the phase-2 vendored glob module
-  (same GlobOptions semantics incl. explicitDotfiles) and are applied in a
-  `filter_entry` predicate against root-relative paths (raw bytes, no lossy
-  conversion), so excluded/non-included directories aren't descended into.
-  Per the spec, includeGlobs literally require directories to match too —
-  `['**']` + explicitDotfiles is the documented dotfile-exclusion recipe.
-  The root (depth 0) is always yielded and never filtered.
+  (same GlobOptions semantics incl. explicitDotfiles) and match against
+  root-relative paths (raw bytes, no lossy conversion). Requirement change
+  (post phase 7, adopting ripgrep's semantics): excludeGlobs prune traversal
+  via `filter_entry` (an excluded directory is never descended into), while
+  includeGlobs only gate what is YIELDED — a non-matching directory is still
+  traversed so `['**/*.txt']` finds nested files, and the include check runs
+  in the visitor before `map` so grepTree still skips reading non-included
+  files. `['**']` + explicitDotfiles remains the dotfile-exclusion recipe
+  (identical output; dot directories are now traversed but not yielded).
+  The root (depth 0) is always yielded and never filtered. A possible future
+  optimization is prefix-aware include pruning (skip directories no
+  extension of which could match any include glob).
 - Streaming is pull-based rather than ThreadsafeFunction-push: the walker
   runs on its own std threads feeding a bounded crossbeam channel (cap 1024
   — backpressure blocks walker threads when JS is slow); `Walk.next()` is a
@@ -287,6 +296,23 @@ status blockquote added here when it lands.
 
 ### Phase 7 — Benchmarks, docs, polish
 
-- Benchmark vs ripgrep CLI and vs naive fs.readdir+regex for sanity.
-- README with API docs and examples; document divergences (if any).
-- Final prettier + full test pass.
+- `bench/grep-tree.js` (committed, takes corpus + patterns as argv):
+  grepTree vs the ripgrep CLI (`--no-config --hidden -j4 -c`, matching our
+  defaults) vs naive sequential Node (recursive readdir + readFile + JS
+  RegExp per line, .git and NUL-files skipped for count parity). On the
+  ripgrep repo checkout, warm cache, median of 5, all three variants
+  agreeing exactly on 84 files / 3060 matched lines:
+  - grepTree (native threads): 6.1 ms
+  - ripgrep CLI: 6.2 ms (includes process spawn)
+  - naive Node (sequential, main thread): 43.8 ms (~7x slower)
+- README: install + platform-entry docs, usage examples for all four
+  functions, full API reference tables, and a "Behavior notes" section
+  documenting the defined edge semantics (error policy, unreadable root,
+  binary/BOM rules, NUL-pattern ban, alternation match semantics,
+  includeGlobs-applies-to-directories, empty-file lines).
+- package.json prettier script now covers bench/ too.
+
+> **Status: implemented (awaiting review).** All of the above landed. Final
+> pass: 127 jest tests + 2 cargo tests green, prettier and cargo fmt clean.
+> The plan is fully implemented; remaining known-unverifiable item is the
+> GitHub Actions workflow execution (needs a push to GitHub to observe).

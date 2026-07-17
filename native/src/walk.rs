@@ -112,9 +112,11 @@ where
             return Err(err.to_string());
         }
     }
-    if !config.include.is_empty() || !config.exclude.is_empty() {
+    // Exclusions prune traversal: an excluded directory is never descended
+    // into. Inclusions only gate what is yielded (below), so a directory
+    // that matches no include glob is still traversed, like ripgrep.
+    if !config.exclude.is_empty() {
         let root_prefix = PathBuf::from(&root);
-        let include = config.include;
         let exclude = config.exclude;
         builder.filter_entry(move |entry| {
             if entry.depth() == 0 {
@@ -125,10 +127,7 @@ where
                 .strip_prefix(&root_prefix)
                 .unwrap_or(entry.path());
             let bytes = std::os::unix::ffi::OsStrExt::as_bytes(rel.as_os_str());
-            if exclude.iter().any(|re| re.is_match(bytes)) {
-                return false;
-            }
-            include.is_empty() || include.iter().any(|re| re.is_match(bytes))
+            !exclude.iter().any(|re| re.is_match(bytes))
         });
     }
 
@@ -136,6 +135,8 @@ where
     let cancelled = Arc::new(AtomicBool::new(false));
     let walker = builder.build_parallel();
     let thread_cancelled = Arc::clone(&cancelled);
+    let include = config.include;
+    let include_root = PathBuf::from(&root);
     std::thread::spawn(move || {
         let emitted_any = AtomicBool::new(false);
         let map = map;
@@ -144,6 +145,8 @@ where
             let cancelled = &thread_cancelled;
             let emitted_any = &emitted_any;
             let map = &map;
+            let include = &include;
+            let include_root = &include_root;
             Box::new(move |result| {
                 if cancelled.load(Ordering::Relaxed) {
                     return WalkState::Quit;
@@ -151,6 +154,19 @@ where
                 match result {
                     Ok(entry) => {
                         emitted_any.store(true, Ordering::Relaxed);
+                        // Inclusions gate yielding (never traversal), and
+                        // run before `map` so grepTree doesn't read
+                        // non-included files. The root is always yielded.
+                        if entry.depth() > 0 && !include.is_empty() {
+                            let rel = entry
+                                .path()
+                                .strip_prefix(include_root)
+                                .unwrap_or(entry.path());
+                            let bytes = std::os::unix::ffi::OsStrExt::as_bytes(rel.as_os_str());
+                            if !include.iter().any(|re| re.is_match(bytes)) {
+                                return WalkState::Continue;
+                            }
+                        }
                         if let Some(item) = map(&entry) {
                             if tx.send(WalkMessage::Item(item)).is_err() {
                                 return WalkState::Quit;
