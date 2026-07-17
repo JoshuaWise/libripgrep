@@ -11,9 +11,14 @@ crate-type = ["cdylib"]
 [dependencies]
 napi = { version = "2", default-features = false, features = ["napi8"] }
 napi-derive = "2"
+regex-automata = "0.4"
+regex-syntax = "0.8"
 
 [build-dependencies]
 napi-build = "2"
+
+[dev-dependencies]
+globset = "0.4.19"
 
 [profile.release]
 lto = true

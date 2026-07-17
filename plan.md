@@ -107,18 +107,36 @@ status blockquote added here when it lands.
 
 ### Phase 2 — compileGlob
 
-- `globset::GlobBuilder` with `literal_separator(true)` always, mapping
-  `GlobOptions`: `caseInsensitive` -> `case_insensitive`, `backslashEscape` ->
-  `backslash_escape`, `emptyAlternates` -> `empty_alternates`,
-  `allowUnclosedClass` (globset ~0.4.15+ `allow_unclosed_class`... verify
-  crate API), `explicitDotfiles` -> globset's `require_literal_leading_dot`
-  equivalent (verify exact builder method).
-- Native returns an opaque matcher handle (napi class or external) exposing
-  `isMatch(path: string): boolean`; TS wraps it in a plain closure
-  `(relativePath: string) => boolean`.
-- Matching itself is pure CPU on small inputs — fine on the calling thread.
-- Tests: each option on/off, separator literalness, dotfile semantics,
-  invalid patterns throw with useful messages.
+- globset has no `explicitDotfiles` equivalent (and its token stream is
+  private), so `native/src/glob.rs` vendors globset 0.4.19's single-glob
+  parser verbatim and reimplements the token->regex translation with a
+  three-mode emission (Normal/Soft/Hard) that keeps wildcards and negated
+  classes from matching segment-leading dots. With `explicitDotfiles` off,
+  the translation is byte-identical to globset's (enforced by a Rust
+  differential test against globset as a dev-dependency, across a 45-pattern
+  corpus x all option combinations, including error parity).
+- Option mapping: `literal_separator(true)` always; `caseInsensitive`,
+  `backslashEscape` (default true), `emptyAlternates` (default true),
+  `allowUnclosedClass` map straight onto the vendored parser options. Regex
+  compilation uses globset's exact config (byte-oriented, 10 MB NFA size
+  limit).
+- The spec's option defaults are applied in the public TypeScript API layer
+  (`resolveGlobOptions()` in src/api.ts) — the single source of truth for
+  defaults. The native addon only ever receives fully-resolved options
+  (`ResolvedGlobOptions` in src/binding.ts; plain bools on the Rust side).
+- Native returns a `GlobMatcher` napi class exposing `isMatch()`; TS wraps it
+  in a plain closure. Matching runs on the calling thread (pure CPU).
+- Tests: 35 jest tests covering every option on/off, separator literalness,
+  all explicitDotfiles semantics (per-segment rule, `*` zero-char exclusion,
+  `**` variants, positive-vs-negated classes, alternates), and invalid
+  pattern errors; plus the 2 Rust differential tests (`cargo test
+  --manifest-path native/Cargo.toml`).
+
+> **Status: implemented (awaiting review).** All of the above landed.
+> `compileGlob` is fully functional; 41 jest tests and 2 Rust tests pass,
+> prettier/cargo fmt clean. Deferred: reusing the compiled matchers for
+> walkTree include/exclude globs (phase 4 will call into the same
+> `glob::compile`).
 
 ### Phase 3 — grepBuffer
 

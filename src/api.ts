@@ -1,4 +1,4 @@
-import type { NativeBinding } from './binding';
+import type { NativeBinding, ResolvedGlobOptions } from './binding';
 import type {
 	GlobOptions,
 	GrepOptions,
@@ -31,11 +31,23 @@ export interface LibRipgrep {
 	grepTree(rootPath: string, options: GrepTreeOptions): AsyncGenerator<GrepTreeResult>;
 }
 
+// Applies the defaults documented on GlobOptions.
+function resolveGlobOptions(options?: GlobOptions): ResolvedGlobOptions {
+	return {
+		caseInsensitive: options?.caseInsensitive ?? false,
+		backslashEscape: options?.backslashEscape ?? true,
+		emptyAlternates: options?.emptyAlternates ?? true,
+		allowUnclosedClass: options?.allowUnclosedClass ?? false,
+		explicitDotfiles: options?.explicitDotfiles ?? false,
+	};
+}
+
 // Builds the public API around the given native addon.
 export function makeApi(native: NativeBinding): LibRipgrep {
 	return {
-		compileGlob(_globPattern, _options) {
-			return native.compileGlob();
+		compileGlob(globPattern, options) {
+			const matcher = native.compileGlob(globPattern, resolveGlobOptions(options));
+			return (relativePath) => matcher.isMatch(relativePath);
 		},
 		grepBuffer(_data, _options) {
 			return native.grepBuffer();

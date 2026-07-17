@@ -19,10 +19,6 @@ describe('addon loading', () => {
 });
 
 describe('stubs', () => {
-	test('compileGlob throws not implemented', () => {
-		expect(() => compileGlob('**/*.js')).toThrow(/not implemented/);
-	});
-
 	test('grepBuffer throws not implemented', () => {
 		expect(() => grepBuffer(Buffer.from('hello'), { patterns: ['h'] })).toThrow(
 			/not implemented/
