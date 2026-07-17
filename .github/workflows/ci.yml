@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: ubuntu-24.04-arm
+            target: linux-arm64
+          - os: macos-13
+            target: darwin-x64
+          - os: macos-latest
+            target: darwin-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - name: Verify the runner matches the target
+        run: test "$(node -p 'process.platform + "-" + process.arch')" = "${{ matrix.target }}"
+      - run: npm ci
+      - run: npm run build:native
+      - run: npm run prepare
+      - run: npx prettier --check "src/**" "test/**"
+      - run: cargo fmt --manifest-path native/Cargo.toml --check
+      - run: cargo test --manifest-path native/Cargo.toml
+      - run: npm run test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prebuild-${{ matrix.target }}
+          path: prebuilds/${{ matrix.target }}/libripgrep.node
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: prebuild-*
+          path: prebuilds
+      # Artifacts download into prebuilds/prebuild-<target>/; strip the
+      # prefix so the layout matches what the entry points require().
+      - name: Arrange prebuilds
+        run: |
+          for dir in prebuilds/prebuild-*; do
+            mv "$dir" "prebuilds/${dir#prebuilds/prebuild-}"
+          done
+      - name: Verify all prebuilds are present
+        run: |
+          for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
+            test -f "prebuilds/$target/libripgrep.node"
+          done
+      - run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

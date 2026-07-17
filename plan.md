@@ -261,11 +261,29 @@ status blockquote added here when it lands.
 
 ### Phase 6 — Prebuilds & packaging
 
-- CI (GitHub Actions) building linux-x64, linux-arm64, darwin-x64,
-  darwin-arm64 `.node` binaries; publish flow bundling them into the npm
-  package (`files` + `prebuilds/`).
-- Verify the platform-specific entry points' require graphs stay fully
-  static (lint or test that asserts no dynamic require in those files).
+- `.github/workflows/ci.yml`: a four-leg matrix on native runners (no
+  cross-compilation): ubuntu-latest/linux-x64, ubuntu-24.04-arm/linux-arm64,
+  macos-13/darwin-x64, macos-latest/darwin-arm64. Each leg asserts the
+  runner actually matches its target, builds the addon, runs
+  tsc/prettier-check/cargo fmt-check/cargo test/jest, and uploads
+  `prebuilds/<target>/libripgrep.node` as an artifact (rust-cache for cargo
+  caching).
+- Publish job (release-published event, needs all build legs): downloads
+  the four artifacts, rearranges them into `prebuilds/<target>/`, verifies
+  all four exist, and `npm publish` (the `prepare` script compiles dist;
+  `files` already ships src/dist/prebuilds). Requires an `NPM_TOKEN` secret.
+- `test/entry-points.test.ts` (8 tests): walks the compiled require graph
+  of each dist/<platform-arch>.js — asserts zero dynamic requires, no path
+  to dist/index.js, and exactly its own prebuild `.node` literal; asserts
+  dist/index.js has exactly one dynamic require (the auto-detection);
+  asserts package.json `exports` covers the root + all four subpaths, every
+  export target exists after compilation, and `files` includes prebuilds.
+
+> **Status: implemented (awaiting review).** All of the above landed. 127
+> jest tests pass; YAML syntax validated locally (workflow execution itself
+> is unverifiable until pushed to GitHub). Deferred: nothing within this
+> phase; npm provenance/engines metadata left out until real usage demands
+> them.
 
 ### Phase 7 — Benchmarks, docs, polish
 
