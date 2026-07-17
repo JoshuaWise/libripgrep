@@ -130,7 +130,7 @@ status blockquote added here when it lands.
   all explicitDotfiles semantics (per-segment rule, `*` zero-char exclusion,
   `**` variants, positive-vs-negated classes, alternates), and invalid
   pattern errors; plus the 2 Rust differential tests (`cargo test
-  --manifest-path native/Cargo.toml`).
+--manifest-path native/Cargo.toml`).
 
 > **Status: implemented (awaiting review).** All of the above landed.
 > `compileGlob` is fully functional; 41 jest tests and 2 Rust tests pass,
@@ -190,10 +190,10 @@ status blockquote added here when it lands.
   (default 4), `follow_links`, `max_depth` (Infinity -> None; 0 = only the
   root), `hidden(false)` always, custom `add_ignore` files (earlier files
   lower precedence — the crate's native behavior), `ignoreStyle` mapping:
-  - 'all': parents + ignore + git_global + git_ignore + git_exclude +
-    require_git(true) + `.rgignore` via add_custom_ignore_filename
-  - 'no-git': parents + ignore + `.rgignore`, all git sources off
-  - 'none': everything off (including parents)
+    - 'all': parents + ignore + git_global + git_ignore + git_exclude +
+      require_git(true) + `.rgignore` via add_custom_ignore_filename
+    - 'no-git': parents + ignore + `.rgignore`, all git sources off
+    - 'none': everything off (including parents)
 - include/exclude globs compile through the phase-2 vendored glob module
   (same GlobOptions semantics incl. explicitDotfiles) and match against
   root-relative paths (raw bytes, no lossy conversion). Requirement change
@@ -249,14 +249,14 @@ status blockquote added here when it lands.
 - Benchmark (scanning location, per CLAUDE.md): ripgrep repo checkout
   (324 entries / 249 files), patterns ['fn\s+\w+', 'Result<'], warm cache,
   median of 5, identical results both ways (84 files, 3060 matched lines):
-  - grepTree (scan on walker threads): 5.9 ms
-  - walkTree + readFile + one pre-compiled compileGrep matcher on the main
-    thread (16-way read concurrency): 15.5 ms (~2.6x slower), and it
-    occupies the main thread for the duration while grepTree leaves it
-    essentially idle. (Pre-redesign datapoint: with grepBuffer recompiling
-    the matcher per file at ~1 ms/call, this variant measured 271 ms —
-    that compilation overhead motivated the compileGrep redesign.)
-  - Decision: scan on walker threads.
+    - grepTree (scan on walker threads): 5.9 ms
+    - walkTree + readFile + one pre-compiled compileGrep matcher on the main
+      thread (16-way read concurrency): 15.5 ms (~2.6x slower), and it
+      occupies the main thread for the duration while grepTree leaves it
+      essentially idle. (Pre-redesign datapoint: with grepBuffer recompiling
+      the matcher per file at ~1 ms/call, this variant measured 271 ms —
+      that compilation overhead motivated the compileGrep redesign.)
+    - Decision: scan on walker threads.
 - Tests (18): match details/offsets per file, dirs never yielded, root
   file, nonexistent root, regexOptions plumbing (multiline, crlf+ci,
   invalid regex, empty patterns), binary skip, UTF-16 BOM files,
@@ -302,9 +302,9 @@ status blockquote added here when it lands.
   RegExp per line, .git and NUL-files skipped for count parity). On the
   ripgrep repo checkout, warm cache, median of 5, all three variants
   agreeing exactly on 84 files / 3060 matched lines:
-  - grepTree (native threads): 6.1 ms
-  - ripgrep CLI: 6.2 ms (includes process spawn)
-  - naive Node (sequential, main thread): 43.8 ms (~7x slower)
+    - grepTree (native threads): 6.1 ms
+    - ripgrep CLI: 6.2 ms (includes process spawn)
+    - naive Node (sequential, main thread): 43.8 ms (~7x slower)
 - README: install + platform-entry docs, usage examples for all four
   functions, full API reference tables, and a "Behavior notes" section
   documenting the defined edge semantics (error policy, unreadable root,
