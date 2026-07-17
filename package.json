@@ -12,16 +12,40 @@
 	"type": "commonjs",
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./linux-x64": {
+			"types": "./dist/linux-x64.d.ts",
+			"default": "./dist/linux-x64.js"
+		},
+		"./linux-arm64": {
+			"types": "./dist/linux-arm64.d.ts",
+			"default": "./dist/linux-arm64.js"
+		},
+		"./darwin-x64": {
+			"types": "./dist/darwin-x64.d.ts",
+			"default": "./dist/darwin-x64.js"
+		},
+		"./darwin-arm64": {
+			"types": "./dist/darwin-arm64.d.ts",
+			"default": "./dist/darwin-arm64.js"
+		}
+	},
 	"scripts": {
 		"test": "jest",
 		"prepare": "tsc",
 		"watch": "tsc --watch",
-		"prettier": "prettier --write src/**",
-		"clean": "rm -rf node_modules dist"
+		"build:native": "bash scripts/build-native.sh",
+		"prettier": "prettier --write src/** test/**",
+		"clean": "rm -rf node_modules dist prebuilds native/target"
 	},
 	"files": [
 		"src/**",
-		"dist/**"
+		"dist/**",
+		"prebuilds/**"
 	],
 	"dependencies": {},
 	"devDependencies": {
