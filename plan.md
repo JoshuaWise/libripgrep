@@ -176,30 +176,45 @@ status blockquote added here when it lands.
 
 ### Phase 4 — walkTree
 
-- `ignore::WalkBuilder` with `threads` (default 4), `follow_links`,
-  `max_depth` (Infinity -> None; 0 = only the root), custom `add_ignore`
-  files (precedence: earlier files lower), `ignoreStyle` mapping:
-  - 'all': gitignore(true) + git_global(true) + git_exclude(true) +
-    ignore(true) + `.rgignore` via add_custom_ignore_filename, require_git(true)
-  - 'no-git': only ignore(true) + `.rgignore` custom filename
-  - 'none': all standard filters off
-  - hidden(false) always (never filter dotfiles); parents(true) so parent
-    ignore files apply (off for 'none').
-- include/exclude globs: build `overrides`-style matchers with the user's
-  `globOptions` (reuse phase 2 compilation), applied during traversal so
-  excluded directories aren't descended into.
-- Parallel walker runs on Rust threads; entries stream to JS in batches via
-  ThreadsafeFunction; JS async generator yields `TreeEntry` objects that
-  satisfy `fs.Dirent` (name, parentPath, isFile()/isDirectory()/
-  isSymbolicLink() etc. from the walker's file type). Root symlink always
-  followed; cycle detection on when `symlinks: true` (ignore crate does this).
-- Backpressure: bounded channel / pause flag so a slow consumer doesn't
-  buffer the whole tree in memory.
-- Tests: fixture trees with .gitignore/.ignore/.rgignore (inside and outside
-  a real .git repo), ignoreFiles precedence, maxDepth 0/1/n, symlink follow +
-  cycle safety, include/exclude globs pruning directories, dotfiles included
-  by default, threads option smoke test, cancellation (generator.return()
-  stops the walk).
+- `ignore::WalkBuilder` configured like ripgrep's walk_builder(): `threads`
+  (default 4), `follow_links`, `max_depth` (Infinity -> None; 0 = only the
+  root), `hidden(false)` always, custom `add_ignore` files (earlier files
+  lower precedence — the crate's native behavior), `ignoreStyle` mapping:
+  - 'all': parents + ignore + git_global + git_ignore + git_exclude +
+    require_git(true) + `.rgignore` via add_custom_ignore_filename
+  - 'no-git': parents + ignore + `.rgignore`, all git sources off
+  - 'none': everything off (including parents)
+- include/exclude globs compile through the phase-2 vendored glob module
+  (same GlobOptions semantics incl. explicitDotfiles) and are applied in a
+  `filter_entry` predicate against root-relative paths (raw bytes, no lossy
+  conversion), so excluded/non-included directories aren't descended into.
+  Per the spec, includeGlobs literally require directories to match too —
+  `['**']` + explicitDotfiles is the documented dotfile-exclusion recipe.
+  The root (depth 0) is always yielded and never filtered.
+- Streaming is pull-based rather than ThreadsafeFunction-push: the walker
+  runs on its own std threads feeding a bounded crossbeam channel (cap 1024
+  — backpressure blocks walker threads when JS is slow); `Walk.next()` is a
+  napi AsyncTask that blocks on the channel from the libuv pool and drains
+  up to 256 entries per batch. Channel disconnect signals completion.
+  `cancel()` (called from the generator's `finally`) sets a flag and drains
+  so blocked walker threads unwind promptly.
+- Walk errors: an error before any entry (e.g. nonexistent root) is fatal
+  and rejects; later errors (unreadable subdirs, symlink loops) are skipped
+  like ripgrep. The wire format is `{path, fileType}`; JS derives
+  name/parentPath via node:path and wraps them in a Dirent-compatible
+  TreeEntryImpl class (@types/node v25 Dirent has no deprecated `path`
+  member, so neither do we).
+- Tests (29): fixture trees with .gitignore/.ignore/.rgignore (inside and
+  outside a real .git repo), .rgignore > .ignore precedence, parent
+  ascension, ignoreFiles precedence order + missing-file rejection, maxDepth
+  0/1, symlink follow/no-follow/cycles/root-always-followed, include/exclude
+  pruning + root-relative matching, `['**']`+explicitDotfiles, early-exit
+  cancellation, threads:1, TypeError validation.
+
+> **Status: implemented (awaiting review).** All of the above landed;
+> `walkTree` is fully functional. 97 jest tests + 2 cargo tests pass;
+> prettier/cargo fmt clean. Deferred: reusing the walk/search plumbing for
+> grepTree (phase 5), where the same pull-based streaming pattern applies.
 
 ### Phase 5 — grepTree
 

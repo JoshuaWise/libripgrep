@@ -19,9 +19,35 @@ export interface ResolvedRegexOptions {
 	unicode: boolean;
 }
 
+// WalkOptions with every documented default already applied. `maxDepth` is
+// undefined for unlimited depth (JS Infinity), matching napi's Option<u32>.
+export interface ResolvedWalkOptions {
+	threads: number;
+	symlinks: boolean;
+	maxDepth: number | undefined;
+	ignoreFiles: string[];
+	ignoreStyle: 'all' | 'no-git' | 'none';
+	includeGlobs: string[];
+	excludeGlobs: string[];
+	globOptions: ResolvedGlobOptions;
+}
+
 // A compiled glob handle returned by the native addon.
 export interface NativeGlobMatcher {
 	isMatch(relativePath: string): boolean;
+}
+
+// One walked entry; name/parentPath are derived from `path` in JS, and
+// `fileType` uses the codes from file_type_code() in native/src/walk.rs.
+export interface NativeWalkEntry {
+	path: string;
+	fileType: number;
+}
+
+// A running native walk; next() resolves null when the walk is complete.
+export interface NativeWalk {
+	next(): Promise<NativeWalkEntry[] | null>;
+	cancel(): void;
 }
 
 // The shape of the native addon (prebuilds/<platform>-<arch>/libripgrep.node).
@@ -34,6 +60,6 @@ export interface NativeBinding {
 		patterns: ReadonlyArray<string>,
 		options: ResolvedRegexOptions
 	): MatchedLine[];
-	walkTree(): never;
+	walkTree(rootPath: string, options: ResolvedWalkOptions): NativeWalk;
 	grepTree(): never;
 }

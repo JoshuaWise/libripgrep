@@ -9,8 +9,10 @@ name = "libripgrep"
 crate-type = ["cdylib"]
 
 [dependencies]
+crossbeam-channel = "0.5"
 grep-matcher = "0.1"
 grep-regex = "0.1"
+ignore = "0.4"
 memchr = "2"
 napi = { version = "2", default-features = false, features = ["napi8"] }
 napi-derive = "2"

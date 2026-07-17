@@ -19,10 +19,6 @@ describe('addon loading', () => {
 });
 
 describe('stubs', () => {
-	test('walkTree rejects not implemented', async () => {
-		await expect(walkTree('.').next()).rejects.toThrow(/not implemented/);
-	});
-
 	test('grepTree rejects not implemented', async () => {
 		await expect(grepTree('.', { patterns: ['h'] }).next()).rejects.toThrow(
 			/not implemented/
