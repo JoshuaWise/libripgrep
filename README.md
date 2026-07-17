@@ -50,7 +50,7 @@ scan(await fs.promises.readFile('src/index.ts')); // => MatchedLine[]
 
 Compiles a glob pattern and returns a matcher function `(relativePath: string) => boolean`. Throws on invalid patterns.
 
-Globs use ripgrep's syntax (`*`, `**`, `?`, `[a-z]`, `[!a-z]`, `{a,b}` with nesting). `/` is always a literal separator: `*` and `?` never match it. Matching runs against relative paths (no leading `/`).
+Globs use ripgrep's syntax (`*`, `**`, `?`, `[a-z]`, `[!a-z]` or `[^a-z]`, `{a,b}` with nesting). `/` is always a literal separator: `*` and `?` never match it. Matching runs against relative paths (no leading `/`).
 
 `GlobOptions`:
 

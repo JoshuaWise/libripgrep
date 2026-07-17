@@ -55,6 +55,18 @@ describe('basic matching', () => {
 		expect(neg('a.txt')).toBe(false);
 	});
 
+	test('[^...] negates like [!...]', () => {
+		const neg = compileGlob('[^a-c].txt');
+		expect(neg('d.txt')).toBe(true);
+		expect(neg('a.txt')).toBe(false);
+		expect(neg('c.txt')).toBe(false);
+		// '^' is only special as the first character of a class.
+		const literal = compileGlob('[a^]');
+		expect(literal('a')).toBe(true);
+		expect(literal('^')).toBe(true);
+		expect(literal('b')).toBe(false);
+	});
+
 	test('alternates', () => {
 		const m = compileGlob('*.{js,ts}');
 		expect(m('a.js')).toBe(true);
@@ -178,6 +190,9 @@ describe('explicitDotfiles', () => {
 		const m = compileGlob('[!x]oo', { explicitDotfiles: true });
 		expect(m('foo')).toBe(true);
 		expect(m('.oo')).toBe(false);
+		const caret = compileGlob('[^x]oo', { explicitDotfiles: true });
+		expect(caret('foo')).toBe(true);
+		expect(caret('.oo')).toBe(false);
 	});
 
 	test('positive classes may match a leading dot', () => {
