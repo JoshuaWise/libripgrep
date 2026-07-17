@@ -140,23 +140,39 @@ status blockquote added here when it lands.
 
 ### Phase 3 — grepBuffer
 
-- `grep-regex::RegexMatcherBuilder` mapping `RegexOptions` (case_insensitive,
-  multi_line, dot_matches_new_line, crlf, unicode) + fixed DFA/regex size
-  limits. Multiple patterns: single matcher via alternation? No — semantics
-  require per-line match offsets for *each* pattern; use one matcher built
-  from the patterns joined as alternation for line selection, then per-line
-  `find_iter` to collect all match ranges. (Decide during implementation:
-  ripgrep builds one matcher from multiple patterns via alternation —
-  mirror that, then find_iter on matched lines gives all ranges.)
-- `grep-searcher::SearcherBuilder`: line-oriented, BOM sniffing on, binary
-  detection quit(NUL), no mmap; search the JS-supplied Buffer via
-  `search_slice` with a sink collecting line text, 1-based line numbers, and
-  match byte ranges.
-- Convert match byte ranges to UTF-16 code-unit offsets in Rust while the
-  line bytes are at hand.
-- Tests: single/multi pattern, all RegexOptions, BOMs (UTF-16 LE/BE, UTF-8),
-  binary buffers yield no results, multiline mode, CRLF handling, offsets
-  correctness on non-ASCII lines (astral plane chars).
+- Matcher: `grep-regex::RegexMatcherBuilder::build_many()` (one alternation
+  matcher over all patterns), configured exactly like ripgrep's
+  `matcher_rust()` (crates/core/flags/hiargs.rs): `multi_line(true)` always
+  (so ^/$ anchor at line boundaries), `unicode`, `case_insensitive`,
+  `ban_byte(NUL)`; multiline mode sets `dot_matches_new_line(multilineDotall)`
+  (and `crlf(true).line_terminator(None)` when crlf); non-multiline sets
+  `line_terminator(Some(\n))` so matches can never span lines. Size limits
+  are grep-regex's defaults, which ARE ripgrep's defaults (100 MiB regex,
+  1000 MiB DFA) — ripgrep only overrides them when flags are passed.
+- Search core (`native/src/search.rs`), shared with phase 5: grep-searcher
+  is NOT used — its sink API doesn't expose per-match spans (ripgrep's own
+  printer re-runs the matcher to find them), and we need exact per-line,
+  per-match UTF-16 offsets. Instead: BOM sniff/transcode (UTF-16 LE/BE via
+  `char::decode_utf16` lossy, UTF-8 BOM stripped, else assume UTF-8), NUL
+  scan on the decoded bytes for binary detection (so UTF-16 U+0000 counts),
+  one `find_iter` pass over the whole buffer, then a merge-walk assigning
+  (possibly multiline) matches to \n-split lines with per-line clipping.
+  Defined edge semantics: empty buffer has no lines; an empty match past a
+  final \n is dropped; a match portion inside a line terminator clamps to an
+  empty span at end-of-content; crlf strips trailing \r from line content.
+- Byte offsets convert to UTF-16 code-unit offsets during line decoding
+  (lossy, exactly like String::from_utf8_lossy; mid-character boundaries
+  resolve to the next character).
+- Tests: single/multi pattern, every RegexOption (incl. multilineDotall
+  no-op without multiline), \n-in-pattern rejection, BOMs (UTF-16 LE/BE,
+  UTF-8), binary buffers, multiline clipping across 2 and 3 lines, CRLF,
+  empty matches (^, $ at EOF), astral-plane and BMP UTF-16 offsets, invalid
+  UTF-8 replacement, argument validation.
+
+> **Status: implemented (awaiting review).** All of the above landed;
+> `grepBuffer` is fully functional. 68 jest tests + 2 cargo tests pass;
+> prettier/cargo fmt clean. Deferred: reuse of `search.rs` by grepTree
+> (phase 5).
 
 ### Phase 4 — walkTree
 

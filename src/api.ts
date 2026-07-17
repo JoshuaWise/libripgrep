@@ -1,10 +1,11 @@
-import type { NativeBinding, ResolvedGlobOptions } from './binding';
+import type { NativeBinding, ResolvedGlobOptions, ResolvedRegexOptions } from './binding';
 import type {
 	GlobOptions,
 	GrepOptions,
 	GrepTreeOptions,
 	GrepTreeResult,
 	MatchedLine,
+	RegexOptions,
 	TreeEntry,
 	WalkOptions,
 } from './types';
@@ -42,6 +43,17 @@ function resolveGlobOptions(options?: GlobOptions): ResolvedGlobOptions {
 	};
 }
 
+// Applies the defaults documented on RegexOptions.
+function resolveRegexOptions(options?: RegexOptions): ResolvedRegexOptions {
+	return {
+		caseInsensitive: options?.caseInsensitive ?? false,
+		multiline: options?.multiline ?? false,
+		multilineDotall: options?.multilineDotall ?? false,
+		crlf: options?.crlf ?? false,
+		unicode: options?.unicode ?? true,
+	};
+}
+
 // Builds the public API around the given native addon.
 export function makeApi(native: NativeBinding): LibRipgrep {
 	return {
@@ -49,8 +61,15 @@ export function makeApi(native: NativeBinding): LibRipgrep {
 			const matcher = native.compileGlob(globPattern, resolveGlobOptions(options));
 			return (relativePath) => matcher.isMatch(relativePath);
 		},
-		grepBuffer(_data, _options) {
-			return native.grepBuffer();
+		grepBuffer(data, options) {
+			if (options.patterns.length === 0) {
+				throw new TypeError('At least one pattern is required');
+			}
+			return native.grepBuffer(
+				data,
+				options.patterns,
+				resolveRegexOptions(options.regexOptions)
+			);
 		},
 		async *walkTree(_rootPath, _options) {
 			native.walkTree();

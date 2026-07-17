@@ -19,12 +19,6 @@ describe('addon loading', () => {
 });
 
 describe('stubs', () => {
-	test('grepBuffer throws not implemented', () => {
-		expect(() => grepBuffer(Buffer.from('hello'), { patterns: ['h'] })).toThrow(
-			/not implemented/
-		);
-	});
-
 	test('walkTree rejects not implemented', async () => {
 		await expect(walkTree('.').next()).rejects.toThrow(/not implemented/);
 	});
