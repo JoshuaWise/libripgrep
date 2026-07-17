@@ -82,6 +82,8 @@ pub struct MatchedLine {
     pub line: String,
     pub line_number: u32,
     pub matches: Vec<Vec<u32>>,
+    pub lines_before: Option<Vec<String>>,
+    pub lines_after: Option<Vec<String>>,
 }
 
 impl From<search::LineMatch> for MatchedLine {
@@ -90,6 +92,8 @@ impl From<search::LineMatch> for MatchedLine {
             line: m.line,
             line_number: m.line_number,
             matches: m.matches.into_iter().map(|(s, e)| vec![s, e]).collect(),
+            lines_before: m.lines_before,
+            lines_after: m.lines_after,
         }
     }
 }
@@ -99,6 +103,8 @@ impl From<search::LineMatch> for MatchedLine {
 pub struct GrepMatcher {
     matcher: grep_regex::RegexMatcher,
     crlf: bool,
+    before_context: u32,
+    after_context: u32,
 }
 
 #[napi]
@@ -110,7 +116,13 @@ impl GrepMatcher {
         if search::is_binary(&decoded) {
             return vec![];
         }
-        search::search_lines(&self.matcher, self.crlf, &decoded)
+        search::search_lines(
+            &self.matcher,
+            self.crlf,
+            self.before_context as usize,
+            self.after_context as usize,
+            &decoded,
+        )
             .into_iter()
             .map(MatchedLine::from)
             .collect()
@@ -120,12 +132,19 @@ impl GrepMatcher {
 // Compiles the given regexes into a reusable matcher, throwing on invalid
 // patterns.
 #[napi]
-pub fn compile_grep(patterns: Vec<String>, options: RegexOptions) -> Result<GrepMatcher> {
+pub fn compile_grep(
+    patterns: Vec<String>,
+    options: RegexOptions,
+    before_context: u32,
+    after_context: u32,
+) -> Result<GrepMatcher> {
     let config = options.to_config();
     let matcher = search::build_matcher(&patterns, &config).map_err(Error::from_reason)?;
     Ok(GrepMatcher {
         matcher,
         crlf: config.crlf,
+        before_context,
+        after_context,
     })
 }
 
@@ -258,6 +277,8 @@ pub fn walk_tree(root_path: String, options: WalkOptions) -> Result<Walk> {
 pub struct GrepTreeOptions {
     pub patterns: Vec<String>,
     pub regex_options: RegexOptions,
+    pub before_context: u32,
+    pub after_context: u32,
     pub max_file_size: Option<i64>,
     pub walk_options: WalkOptions,
 }
@@ -340,6 +361,8 @@ pub fn grep_tree(root_path: String, options: GrepTreeOptions) -> Result<GrepWalk
     let matcher =
         search::build_matcher(&options.patterns, &regex_config).map_err(Error::from_reason)?;
     let crlf = regex_config.crlf;
+    let before_context = options.before_context as usize;
+    let after_context = options.after_context as usize;
     let stream = walk::start_walk(root_path, config, move |entry| {
         let file_type = entry.file_type()?;
         if !file_type.is_file() {
@@ -354,7 +377,13 @@ pub fn grep_tree(root_path: String, options: GrepTreeOptions) -> Result<GrepWalk
                 }
             }
         }
-        let matches = search::search_file(&matcher, crlf, entry.path())?;
+        let matches = search::search_file(
+            &matcher,
+            crlf,
+            before_context,
+            after_context,
+            entry.path(),
+        )?;
         Some(GrepItem {
             entry: walk::entry_data(entry),
             matches,

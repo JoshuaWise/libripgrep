@@ -1,5 +1,3 @@
-import type { MatchedLine } from './types';
-
 // GlobOptions with every documented default already applied; the API layer
 // owns default resolution, so the native addon only sees resolved options.
 export interface ResolvedGlobOptions {
@@ -39,7 +37,17 @@ export interface NativeGlobMatcher {
 
 // A compiled grep handle returned by the native addon.
 export interface NativeGrepMatcher {
-	scan(data: Readonly<Buffer>): MatchedLine[];
+	scan(data: Readonly<Buffer>): NativeMatchedLine[];
+}
+
+// A matching line returned by napi-rs. Optional Rust object fields may arrive
+// as null or undefined and are normalized by the public API layer.
+export interface NativeMatchedLine {
+	line: string;
+	lineNumber: number;
+	matches: [number, number][];
+	linesBefore?: string[] | null;
+	linesAfter?: string[] | null;
 }
 
 // One walked entry; name/parentPath are derived from `path` in JS, and
@@ -60,13 +68,15 @@ export interface NativeWalk {
 export interface ResolvedGrepTreeOptions {
 	patterns: string[];
 	regexOptions: ResolvedRegexOptions;
+	beforeContext: number;
+	afterContext: number;
 	maxFileSize: number | undefined;
 	walkOptions: ResolvedWalkOptions;
 }
 
 // One matched file produced by the native grep walk.
 export interface NativeGrepTreeEntry extends NativeWalkEntry {
-	matches: MatchedLine[];
+	matches: NativeMatchedLine[];
 }
 
 // A running native grep walk; next() resolves null when complete.
@@ -82,7 +92,9 @@ export interface NativeBinding {
 	compileGlob(globPattern: string, options: ResolvedGlobOptions): NativeGlobMatcher;
 	compileGrep(
 		patterns: ReadonlyArray<string>,
-		options: ResolvedRegexOptions
+		options: ResolvedRegexOptions,
+		beforeContext: number,
+		afterContext: number
 	): NativeGrepMatcher;
 	walkTree(rootPath: string, options: ResolvedWalkOptions): NativeWalk;
 	grepTree(rootPath: string, options: ResolvedGrepTreeOptions): NativeGrepWalk;

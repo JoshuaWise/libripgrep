@@ -71,12 +71,16 @@ interface MatchedLine {
 	line: string; // the entire matching line, without its terminator
 	lineNumber: number; // 1-based
 	matches: [number, number][]; // per-match [start, end) offsets into `line`, in UTF-16 code units (ready for String.prototype.slice)
+	linesBefore: string[] | undefined; // provided when beforeContext is greater than zero
+	linesAfter: string[] | undefined; // provided when afterContext is greater than zero
 }
 ```
 
 `GrepOptions`:
 
 - `patterns` — one or more regex patterns (Rust regex syntax, like ripgrep). A line matches if any pattern matches.
+- `beforeContext` — include up to this many physical lines immediately before each matching line. Default `0`.
+- `afterContext` — include up to this many physical lines immediately after each matching line. Default `0`.
 - `regexOptions`:
 
 | Option            | Default | Meaning                                                                                                                                                        |

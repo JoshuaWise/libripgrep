@@ -98,6 +98,24 @@ describe('basic searching', () => {
 		await makeTree(root, { 'a.txt': 'nope\n' });
 		expect(await collect(grepTree(root, { patterns: ['hello'] }))).toEqual([]);
 	});
+
+	test('includes requested context lines', async () => {
+		await makeTree(root, { 'a.txt': 'before\n\nmatch\nafter\n' });
+		const results = await grepPaths(root, {
+			patterns: ['match'],
+			beforeContext: 2,
+			afterContext: 1,
+		});
+		expect(results.get('a.txt')?.matches).toEqual([
+			{
+				line: 'match',
+				lineNumber: 3,
+				matches: [[0, 5]],
+				linesBefore: ['before', ''],
+				linesAfter: ['after'],
+			},
+		]);
+	});
 });
 
 describe('regexOptions plumbing', () => {

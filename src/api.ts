@@ -1,6 +1,7 @@
 import { basename, dirname } from 'node:path';
 import type {
 	NativeBinding,
+	NativeMatchedLine,
 	NativeWalkEntry,
 	ResolvedGlobOptions,
 	ResolvedGrepTreeOptions,
@@ -64,6 +65,29 @@ function resolveRegexOptions(options?: RegexOptions): ResolvedRegexOptions {
 	};
 }
 
+// Applies the default for a line-context option and validates it.
+function resolveContext(value: number | undefined, name: string): number {
+	const resolved = value ?? 0;
+	if (!Number.isInteger(resolved) || resolved < 0 || resolved > 0xffffffff) {
+		throw new TypeError(
+			`${name} must be a non-negative integer no greater than 4294967295`
+		);
+	}
+	return resolved;
+}
+
+// napi-rs represents absent Rust Option fields as null or undefined depending
+// on its version; the public API always exposes both properties as undefined.
+function toMatchedLine(match: NativeMatchedLine): MatchedLine {
+	return {
+		line: match.line,
+		lineNumber: match.lineNumber,
+		matches: match.matches,
+		linesBefore: match.linesBefore ?? undefined,
+		linesAfter: match.linesAfter ?? undefined,
+	};
+}
+
 // Applies the defaults documented on WalkOptions and validates the numeric
 // and enumerated options.
 function resolveWalkOptions(options?: WalkOptions): ResolvedWalkOptions {
@@ -104,6 +128,8 @@ function resolveGrepTreeOptions(options: GrepTreeOptions): ResolvedGrepTreeOptio
 	return {
 		patterns: [...options.patterns],
 		regexOptions: resolveRegexOptions(options.regexOptions),
+		beforeContext: resolveContext(options.beforeContext, 'beforeContext'),
+		afterContext: resolveContext(options.afterContext, 'afterContext'),
 		maxFileSize: maxFileSize === Infinity ? undefined : maxFileSize,
 		walkOptions: resolveWalkOptions(options.walkOptions),
 	};
@@ -158,9 +184,11 @@ export function makeApi(native: NativeBinding): LibRipgrep {
 			}
 			const matcher = native.compileGrep(
 				options.patterns,
-				resolveRegexOptions(options.regexOptions)
+				resolveRegexOptions(options.regexOptions),
+				resolveContext(options.beforeContext, 'beforeContext'),
+				resolveContext(options.afterContext, 'afterContext')
 			);
-			return (data) => matcher.scan(data);
+			return (data) => matcher.scan(data).map(toMatchedLine);
 		},
 		async *walkTree(rootPath, options) {
 			const walk = native.walkTree(rootPath, resolveWalkOptions(options));
@@ -181,7 +209,10 @@ export function makeApi(native: NativeBinding): LibRipgrep {
 				let batch;
 				while ((batch = await grep.next()) !== null) {
 					for (const item of batch) {
-						yield { entry: new TreeEntryImpl(item), matches: item.matches };
+						yield {
+							entry: new TreeEntryImpl(item),
+							matches: item.matches.map(toMatchedLine),
+						};
 					}
 				}
 			} finally {

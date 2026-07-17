@@ -19,6 +19,8 @@ pub struct LineMatch {
     pub line_number: u32,
     // UTF-16 code-unit offsets into `line`.
     pub matches: Vec<(u32, u32)>,
+    pub lines_before: Option<Vec<String>>,
+    pub lines_after: Option<Vec<String>>,
 }
 
 /*
@@ -99,6 +101,8 @@ pub fn is_binary(data: &[u8]) -> bool {
 pub fn search_file(
     matcher: &RegexMatcher,
     crlf: bool,
+    before_context: usize,
+    after_context: usize,
     path: &std::path::Path,
 ) -> Option<Vec<LineMatch>> {
     let data = std::fs::read(path).ok()?;
@@ -106,7 +110,7 @@ pub fn search_file(
     if is_binary(&decoded) {
         return None;
     }
-    let matches = search_lines(matcher, crlf, &decoded);
+    let matches = search_lines(matcher, crlf, before_context, after_context, &decoded);
     if matches.is_empty() {
         None
     } else {
@@ -131,7 +135,13 @@ leftmost-first across the pattern alternation), then are assigned to lines:
 Byte offsets are converted to UTF-16 code-unit offsets while decoding each
 matched line, replacing invalid UTF-8 exactly like String::from_utf8_lossy.
 */
-pub fn search_lines(matcher: &RegexMatcher, crlf: bool, data: &[u8]) -> Vec<LineMatch> {
+pub fn search_lines(
+    matcher: &RegexMatcher,
+    crlf: bool,
+    before_context: usize,
+    after_context: usize,
+    data: &[u8],
+) -> Vec<LineMatch> {
     // An empty buffer has no lines (an empty match at EOF has no home).
     if data.is_empty() {
         return vec![];
@@ -198,7 +208,41 @@ pub fn search_lines(matcher: &RegexMatcher, crlf: bool, data: &[u8]) -> Vec<Line
     if !pending.is_empty() {
         results.push(finish_line(data, &line, &pending));
     }
+    add_context(data, crlf, before_context, after_context, &mut results);
     results
+}
+
+// Adds adjacent physical lines to matched lines only when requested.
+fn add_context(
+    data: &[u8],
+    crlf: bool,
+    before_context: usize,
+    after_context: usize,
+    results: &mut [LineMatch],
+) {
+    if before_context == 0 && after_context == 0 {
+        return;
+    }
+    let mut lines = vec![];
+    let mut line = LineBounds::at(data, 0, 1, crlf);
+    loop {
+        lines.push(String::from_utf8_lossy(&data[line.start..line.content_end]).into_owned());
+        if line.term_end >= data.len() {
+            break;
+        }
+        line = LineBounds::at(data, line.term_end, line.number + 1, crlf);
+    }
+    for result in results {
+        let index = result.line_number as usize - 1;
+        if before_context > 0 {
+            let start = index.saturating_sub(before_context);
+            result.lines_before = Some(lines[start..index].to_vec());
+        }
+        if after_context > 0 {
+            let end = (index + 1 + after_context).min(lines.len());
+            result.lines_after = Some(lines[index + 1..end].to_vec());
+        }
+    }
 }
 
 struct LineBounds {
@@ -290,5 +334,7 @@ fn finish_line(data: &[u8], line: &LineBounds, spans: &[(usize, usize)]) -> Line
         line: text,
         line_number: line.number,
         matches,
+        lines_before: None,
+        lines_after: None,
     }
 }

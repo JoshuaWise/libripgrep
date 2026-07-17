@@ -100,6 +100,14 @@ export interface GrepOptions {
 
 	// The options to apply to all regex patterns.
 	readonly regexOptions?: RegexOptions;
+
+	// Include up to this many lines immediately before each matching line.
+	// Default is 0.
+	readonly beforeContext?: number;
+
+	// Include up to this many lines immediately after each matching line.
+	// Default is 0.
+	readonly afterContext?: number;
 }
 
 // A line containing one or more regex matches.
@@ -114,6 +122,14 @@ export interface MatchedLine {
 	// UTF-16 code-unit offsets within the `line` string (e.g., for
 	// String.prototype.slice()).
 	matches: [number, number][];
+
+	// Lines immediately before this match, ordered from earliest to latest,
+	// or undefined when beforeContext was not used.
+	linesBefore: string[] | undefined;
+
+	// Lines immediately after this match, ordered from earliest to latest,
+	// or undefined when afterContext was not used.
+	linesAfter: string[] | undefined;
 }
 
 // Options controlling grepTree().
