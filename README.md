@@ -54,13 +54,13 @@ Globs use ripgrep's syntax (`*`, `**`, `?`, `[a-z]`, `[!a-z]` or `[^a-z]`, `{a,b
 
 `GlobOptions`:
 
-| Option               | Default | Meaning                                                                                                                                       |
-| -------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `caseInsensitive`    | `false` | Match paths case-insensitively.                                                                                                               |
-| `backslashEscape`    | `true`  | `\` escapes special characters. Note that `\` is always treated literally if not followed by a special character (so `\\` is literally `\\`). |
-| `emptyAlternates`    | `true`  | Empty alternate branches (`foo{,.txt}`) match zero characters. If disabled, such branches are ignored.                                        |
-| `allowUnclosedClass` | `false` | Treat an unclosed `[` as a literal instead of erroring.                                                                                       |
-| `explicitDotfiles`   | `false` | Prevent `**`, `*`, `?`, and negated classes from matching dotfiles. Literal dots and non-negated classes (`[.a]`) still can.                  |
+| Option               | Default | Meaning                                                                                                                                                        |
+| -------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `caseInsensitive`    | `false` | Match paths case-insensitively.                                                                                                                                |
+| `backslashEscape`    | `true`  | `\` escapes the following character, making it literal (so you need two consecutive `\` characters to match a single literal `\`). A trailing `\` is an error. |
+| `emptyAlternates`    | `true`  | Empty alternate branches (`foo{,.txt}`) match zero characters. If disabled, such branches are ignored.                                                         |
+| `allowUnclosedClass` | `false` | Treat an unclosed `[` as a literal instead of erroring.                                                                                                        |
+| `explicitDotfiles`   | `false` | Prevent `**`, `*`, `?`, and negated classes from matching dotfiles. Literal dots and non-negated classes (`[.a]`) still can.                                   |
 
 ### `compileGrep(grepOptions)`
 
