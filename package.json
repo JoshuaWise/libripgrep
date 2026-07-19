@@ -1,6 +1,6 @@
 {
 	"name": "libripgrep",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "Native bindings for ripgrep",
 	"author": "Joshua Wise <joshuathomaswise@gmail.com>",
 	"homepage": "https://github.com/JoshuaWise/libripgrep#readme",
