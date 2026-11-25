@@ -101,6 +101,11 @@ export interface GrepOptions {
 	// The options to apply to all regex patterns.
 	readonly regexOptions?: RegexOptions;
 
+	// When true, data that ends with a line terminator has one more, empty,
+	// line after it. Regexes like "^" and "$" can match that line, and it
+	// counts as a context line. Default false (like ripgrep).
+	readonly finalEmptyLine?: boolean;
+
 	// Include up to this many lines immediately before each matching line.
 	// Default is 0.
 	readonly beforeContext?: number;

@@ -304,3 +304,62 @@ describe('robustness', () => {
 		expect(count).toBe(1);
 	});
 });
+
+describe('finalEmptyLine', () => {
+	test('line numbers agree with split(/\\r?\\n/) for every file', async () => {
+		const files: Record<string, string> = {
+			'a.txt': 'a\nb\n',
+			'b.txt': 'x\n\n\n',
+			'c.txt': 'a\r\nb\rc\n\nd\n',
+			'd.txt': 'no newline',
+		};
+		await makeTree(root, files);
+		const results = await grepPaths(root, { patterns: ['^'], finalEmptyLine: true });
+		for (const [name, text] of Object.entries(files)) {
+			expect(
+				results
+					.get(name)
+					?.matches.map(({ line, lineNumber }) => ({ line, lineNumber }))
+			).toEqual(
+				text.split(/\r?\n/).map((line, i) => ({ line, lineNumber: i + 1 }))
+			);
+		}
+	});
+
+	test('a file whose only match is at the final empty line is yielded', async () => {
+		await makeTree(root, { 'a.txt': 'a\nb\n' });
+		expect((await grepPaths(root, { patterns: ['^$'] })).size).toBe(0);
+		const results = await grepPaths(root, {
+			patterns: ['^$'],
+			finalEmptyLine: true,
+			beforeContext: 1,
+		});
+		expect(results.get('a.txt')?.matches).toEqual([
+			{ line: '', lineNumber: 3, matches: [[0, 0]], linesBefore: ['b'] },
+		]);
+	});
+
+	test('includes the final empty line as after-context', async () => {
+		await makeTree(root, { 'a.txt': 'a\nb\n' });
+		const results = await grepPaths(root, {
+			patterns: ['b'],
+			finalEmptyLine: true,
+			afterContext: 2,
+		});
+		expect(results.get('a.txt')?.matches).toEqual([
+			{ line: 'b', lineNumber: 2, matches: [[0, 1]], linesAfter: [''] },
+		]);
+	});
+
+	test('applies to UTF-16 files with a BOM', async () => {
+		await writeFile(
+			join(root, 'utf16.txt'),
+			Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('a\n', 'utf16le')])
+		);
+		const results = await grepPaths(root, { patterns: ['$'], finalEmptyLine: true });
+		expect(results.get('utf16.txt')?.matches).toEqual([
+			{ line: 'a', lineNumber: 1, matches: [[1, 1]] },
+			{ line: '', lineNumber: 2, matches: [[0, 0]] },
+		]);
+	});
+});

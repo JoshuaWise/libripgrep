@@ -68,6 +68,7 @@ export interface NativeWalk {
 export interface ResolvedGrepTreeOptions {
 	patterns: string[];
 	regexOptions: ResolvedRegexOptions;
+	finalEmptyLine: boolean;
 	beforeContext: number;
 	afterContext: number;
 	maxFileSize: number | undefined;
@@ -93,6 +94,7 @@ export interface NativeBinding {
 	compileGrep(
 		patterns: ReadonlyArray<string>,
 		options: ResolvedRegexOptions,
+		finalEmptyLine: boolean,
 		beforeContext: number,
 		afterContext: number
 	): NativeGrepMatcher;

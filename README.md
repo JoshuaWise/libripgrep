@@ -81,6 +81,7 @@ interface MatchedLine {
 - `patterns` — one or more regex patterns (Rust regex syntax, like ripgrep). A line matches if any pattern matches.
 - `beforeContext` — include up to this many physical lines immediately before each matching line. Default `0`.
 - `afterContext` — include up to this many physical lines immediately after each matching line. Default `0`.
+- `finalEmptyLine` — when a file ends with a line terminator, treat it as having one more, empty, line after it. Regexes like `^`, `$`, and `.*` can match that line, and it can appear in `beforeContext` and `afterContext`. Default `false` (like ripgrep).
 - `regexOptions`:
 
 | Option            | Default | Meaning                                                                                                                                                        |

@@ -103,6 +103,7 @@ impl From<search::LineMatch> for MatchedLine {
 pub struct GrepMatcher {
     matcher: grep_regex::RegexMatcher,
     crlf: bool,
+    final_empty_line: bool,
     before_context: u32,
     after_context: u32,
 }
@@ -119,6 +120,7 @@ impl GrepMatcher {
         search::search_lines(
             &self.matcher,
             self.crlf,
+            self.final_empty_line,
             self.before_context as usize,
             self.after_context as usize,
             &decoded,
@@ -135,6 +137,7 @@ impl GrepMatcher {
 pub fn compile_grep(
     patterns: Vec<String>,
     options: RegexOptions,
+    final_empty_line: bool,
     before_context: u32,
     after_context: u32,
 ) -> Result<GrepMatcher> {
@@ -143,6 +146,7 @@ pub fn compile_grep(
     Ok(GrepMatcher {
         matcher,
         crlf: config.crlf,
+        final_empty_line,
         before_context,
         after_context,
     })
@@ -277,6 +281,7 @@ pub fn walk_tree(root_path: String, options: WalkOptions) -> Result<Walk> {
 pub struct GrepTreeOptions {
     pub patterns: Vec<String>,
     pub regex_options: RegexOptions,
+    pub final_empty_line: bool,
     pub before_context: u32,
     pub after_context: u32,
     pub max_file_size: Option<i64>,
@@ -361,6 +366,7 @@ pub fn grep_tree(root_path: String, options: GrepTreeOptions) -> Result<GrepWalk
     let matcher =
         search::build_matcher(&options.patterns, &regex_config).map_err(Error::from_reason)?;
     let crlf = regex_config.crlf;
+    let final_empty_line = options.final_empty_line;
     let before_context = options.before_context as usize;
     let after_context = options.after_context as usize;
     let stream = walk::start_walk(root_path, config, move |entry| {
@@ -377,8 +383,14 @@ pub fn grep_tree(root_path: String, options: GrepTreeOptions) -> Result<GrepWalk
                 }
             }
         }
-        let matches =
-            search::search_file(&matcher, crlf, before_context, after_context, entry.path())?;
+        let matches = search::search_file(
+            &matcher,
+            crlf,
+            final_empty_line,
+            before_context,
+            after_context,
+            entry.path(),
+        )?;
         Some(GrepItem {
             entry: walk::entry_data(entry),
             matches,

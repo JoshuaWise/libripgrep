@@ -348,3 +348,126 @@ describe('argument validation', () => {
 		);
 	});
 });
+
+describe('finalEmptyLine', () => {
+	// Every line, numbered and split the way JavaScript's split(/\r?\n/) does.
+	function splitLines(text: string): { line: string; lineNumber: number }[] {
+		return text.split(/\r?\n/).map((line, i) => ({ line, lineNumber: i + 1 }));
+	}
+
+	function everyLine(data: Buffer, options?: Partial<GrepOptions>): MatchedLine[] {
+		return grep(data, { patterns: ['^'], finalEmptyLine: true, ...options });
+	}
+
+	test.each([
+		'a\nb\n',
+		'x\n\n\n',
+		'a\r\nb\rc\n\nd\n',
+		'a\nb',
+		'a\r\n',
+		'\n',
+		'one\r\n\r\ntwo\r\n',
+		'é😀\nü\n',
+	])('line numbers and contents agree with split(/\\r?\\n/) for %j', (text) => {
+		const results = everyLine(buf(text));
+		expect(results.map(({ line, lineNumber }) => ({ line, lineNumber }))).toEqual(
+			splitLines(text)
+		);
+	});
+
+	test('defaults to false (like ripgrep)', () => {
+		expect(
+			grep(buf('x\n\n\n'), { patterns: ['^'] }).map((r) => r.lineNumber)
+		).toEqual([1, 2, 3]);
+		expect(grep(buf('a\n'), { patterns: ['^$'] })).toEqual([]);
+	});
+
+	test.each(['^', '$', '^$', '.*'])('%s matches the final empty line', (pattern) => {
+		const results = grep(buf('a\n'), { patterns: [pattern], finalEmptyLine: true });
+		expect(results[results.length - 1]).toEqual({
+			line: '',
+			lineNumber: 2,
+			matches: [[0, 0]],
+		});
+		expect(results.every((r) => r.lineNumber <= 2)).toBe(true);
+	});
+
+	test('no final terminator and an empty buffer are unchanged', () => {
+		expect(grep(buf('a'), { patterns: ['^'], finalEmptyLine: true })).toEqual([
+			{ line: 'a', lineNumber: 1, matches: [[0, 0]] },
+		]);
+		expect(grep(buf(''), { patterns: ['^'], finalEmptyLine: true })).toEqual([]);
+		expect(
+			grep(Buffer.from([0xef, 0xbb, 0xbf]), {
+				patterns: ['^'],
+				finalEmptyLine: true,
+			})
+		).toEqual([]);
+	});
+
+	test('a multiline match ending at EOF does not touch the final empty line', () => {
+		expect(
+			grep(buf('a\n'), {
+				patterns: ['a\\n'],
+				finalEmptyLine: true,
+				regexOptions: { multiline: true },
+			})
+		).toEqual([{ line: 'a', lineNumber: 1, matches: [[0, 1]] }]);
+		expect(
+			grep(buf('a\nb\n'), {
+				patterns: ['^$'],
+				finalEmptyLine: true,
+				regexOptions: { multiline: true },
+			})
+		).toEqual([{ line: '', lineNumber: 3, matches: [[0, 0]] }]);
+	});
+
+	test('with crlf disabled, \\r stays in the line and \\n still ends it', () => {
+		expect(
+			everyLine(buf('a\r\nb\r\n'), { regexOptions: { crlf: false } }).map(
+				(r) => r.line
+			)
+		).toEqual(['a\r', 'b\r', '']);
+		expect(
+			grep(buf('a\r\n'), {
+				patterns: ['$'],
+				finalEmptyLine: true,
+				regexOptions: { crlf: false },
+			})
+		).toEqual([
+			{ line: 'a\r', lineNumber: 1, matches: [[2, 2]] },
+			{ line: '', lineNumber: 2, matches: [[0, 0]] },
+		]);
+	});
+
+	test('context lines include the final empty line on both sides', () => {
+		expect(
+			grep(buf('a\nb\n'), {
+				patterns: ['b'],
+				finalEmptyLine: true,
+				afterContext: 3,
+			})
+		).toEqual([{ line: 'b', lineNumber: 2, matches: [[0, 1]], linesAfter: [''] }]);
+		expect(
+			grep(buf('a\nb\n'), {
+				patterns: ['^$'],
+				finalEmptyLine: true,
+				beforeContext: 3,
+			})
+		).toEqual([
+			{ line: '', lineNumber: 3, matches: [[0, 0]], linesBefore: ['a', 'b'] },
+		]);
+	});
+
+	test.each(['utf16le', 'utf16be'])('applies to %s input with a BOM', (encoding) => {
+		const text = 'a\r\nb\n';
+		const le = Buffer.concat([
+			Buffer.from([0xff, 0xfe]),
+			Buffer.from(text, 'utf16le'),
+		]);
+		const data = encoding === 'utf16le' ? le : Buffer.from(le).swap16();
+		expect(
+			everyLine(data).map(({ line, lineNumber }) => ({ line, lineNumber }))
+		).toEqual(splitLines(text));
+	});
+});

@@ -128,6 +128,7 @@ function resolveGrepTreeOptions(options: GrepTreeOptions): ResolvedGrepTreeOptio
 	return {
 		patterns: [...options.patterns],
 		regexOptions: resolveRegexOptions(options.regexOptions),
+		finalEmptyLine: options.finalEmptyLine ?? false,
 		beforeContext: resolveContext(options.beforeContext, 'beforeContext'),
 		afterContext: resolveContext(options.afterContext, 'afterContext'),
 		maxFileSize: maxFileSize === Infinity ? undefined : maxFileSize,
@@ -185,6 +186,7 @@ export function makeApi(native: NativeBinding): LibRipgrep {
 			const matcher = native.compileGrep(
 				options.patterns,
 				resolveRegexOptions(options.regexOptions),
+				options.finalEmptyLine ?? false,
 				resolveContext(options.beforeContext, 'beforeContext'),
 				resolveContext(options.afterContext, 'afterContext')
 			);

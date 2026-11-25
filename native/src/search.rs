@@ -101,6 +101,7 @@ pub fn is_binary(data: &[u8]) -> bool {
 pub fn search_file(
     matcher: &RegexMatcher,
     crlf: bool,
+    final_empty_line: bool,
     before_context: usize,
     after_context: usize,
     path: &std::path::Path,
@@ -110,7 +111,14 @@ pub fn search_file(
     if is_binary(&decoded) {
         return None;
     }
-    let matches = search_lines(matcher, crlf, before_context, after_context, &decoded);
+    let matches = search_lines(
+        matcher,
+        crlf,
+        final_empty_line,
+        before_context,
+        after_context,
+        &decoded,
+    );
     if matches.is_empty() {
         None
     } else {
@@ -130,7 +138,8 @@ leftmost-first across the pattern alternation), then are assigned to lines:
   empty span at the end of the line's content.
 - An empty match belongs to the line whose content region contains it. An
   empty match past a final \n (e.g. `$` at EOF of "a\n") has no line and is
-  dropped.
+  dropped, unless `final_empty_line` is set: then data ending in \n has one
+  more empty, unterminated line after it.
 
 Byte offsets are converted to UTF-16 code-unit offsets while decoding each
 matched line, replacing invalid UTF-8 exactly like String::from_utf8_lossy.
@@ -138,6 +147,7 @@ matched line, replacing invalid UTF-8 exactly like String::from_utf8_lossy.
 pub fn search_lines(
     matcher: &RegexMatcher,
     crlf: bool,
+    final_empty_line: bool,
     before_context: usize,
     after_context: usize,
     data: &[u8],
@@ -168,11 +178,13 @@ pub fn search_lines(
                 results.push(finish_line(data, line, pending));
                 pending.clear();
             }
-            if line.term_end >= data.len() {
-                return false;
+            match line.next(data, crlf, final_empty_line) {
+                Some(next) => {
+                    *line = next;
+                    true
+                }
+                None => false,
             }
-            *line = LineBounds::at(data, line.term_end, line.number + 1, crlf);
-            true
         };
 
     'spans: for &(start, end) in &spans {
@@ -208,7 +220,14 @@ pub fn search_lines(
     if !pending.is_empty() {
         results.push(finish_line(data, &line, &pending));
     }
-    add_context(data, crlf, before_context, after_context, &mut results);
+    add_context(
+        data,
+        crlf,
+        final_empty_line,
+        before_context,
+        after_context,
+        &mut results,
+    );
     results
 }
 
@@ -216,6 +235,7 @@ pub fn search_lines(
 fn add_context(
     data: &[u8],
     crlf: bool,
+    final_empty_line: bool,
     before_context: usize,
     after_context: usize,
     results: &mut [LineMatch],
@@ -224,13 +244,10 @@ fn add_context(
         return;
     }
     let mut lines = vec![];
-    let mut line = LineBounds::at(data, 0, 1, crlf);
-    loop {
-        lines.push(String::from_utf8_lossy(&data[line.start..line.content_end]).into_owned());
-        if line.term_end >= data.len() {
-            break;
-        }
-        line = LineBounds::at(data, line.term_end, line.number + 1, crlf);
+    let mut line = Some(LineBounds::at(data, 0, 1, crlf));
+    while let Some(current) = line {
+        lines.push(String::from_utf8_lossy(&data[current.start..current.content_end]).into_owned());
+        line = current.next(data, crlf, final_empty_line);
     }
     for result in results {
         let index = result.line_number as usize - 1;
@@ -271,6 +288,15 @@ impl LineBounds {
             term_end,
             number,
         }
+    }
+
+    // Returns the following line, or None at the end of the buffer. With
+    // `final_empty_line`, a line ending in \n at EOF is followed by one more
+    // empty line.
+    fn next(&self, data: &[u8], crlf: bool, final_empty_line: bool) -> Option<LineBounds> {
+        let has_more = self.term_end < data.len()
+            || (final_empty_line && self.term_end > self.start && data[self.term_end - 1] == b'\n');
+        has_more.then(|| LineBounds::at(data, self.term_end, self.number + 1, crlf))
     }
 }
 
@@ -336,5 +362,133 @@ fn finish_line(data: &[u8], line: &LineBounds, spans: &[(usize, usize)]) -> Line
         matches,
         lines_before: None,
         lines_after: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    type Line = (u32, String, Vec<(u32, u32)>);
+
+    fn config(multiline: bool, crlf: bool) -> RegexConfig {
+        RegexConfig {
+            case_insensitive: false,
+            multiline,
+            multiline_dotall: false,
+            crlf,
+            unicode: true,
+        }
+    }
+
+    fn search(
+        pattern: &str,
+        config: &RegexConfig,
+        final_empty_line: bool,
+        data: &str,
+    ) -> Vec<Line> {
+        let matcher = build_matcher(&[pattern.to_string()], config).unwrap();
+        search_lines(
+            &matcher,
+            config.crlf,
+            final_empty_line,
+            0,
+            0,
+            data.as_bytes(),
+        )
+        .into_iter()
+        .map(|m| (m.line_number, m.line, m.matches))
+        .collect()
+    }
+
+    fn line(number: u32, text: &str, matches: &[(u32, u32)]) -> Line {
+        (number, text.to_string(), matches.to_vec())
+    }
+
+    #[test]
+    fn empty_matches_at_eof_belong_to_the_final_empty_line() {
+        let cfg = config(false, true);
+        for pattern in ["^", "$", "^$", ".*"] {
+            assert!(
+                search(pattern, &cfg, false, "a\n")
+                    .iter()
+                    .all(|(number, ..)| *number == 1),
+                "{pattern}"
+            );
+            assert_eq!(
+                search(pattern, &cfg, true, "a\n").last(),
+                Some(&line(2, "", &[(0, 0)])),
+                "{pattern}"
+            );
+        }
+        assert_eq!(
+            search("^", &cfg, true, "x\n\n\n"),
+            (1..=4)
+                .map(|n| line(n, if n == 1 { "x" } else { "" }, &[(0, 0)]))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(search("^", &cfg, false, "x\n\n\n").len(), 3);
+    }
+
+    #[test]
+    fn crlf_terminator_is_followed_by_the_final_empty_line() {
+        let cfg = config(false, true);
+        assert_eq!(
+            search("^", &cfg, true, "a\r\n"),
+            vec![line(1, "a", &[(0, 0)]), line(2, "", &[(0, 0)])]
+        );
+        let no_crlf = config(false, false);
+        assert_eq!(
+            search("^", &no_crlf, true, "a\r\n"),
+            vec![line(1, "a\r", &[(0, 0)]), line(2, "", &[(0, 0)])]
+        );
+    }
+
+    #[test]
+    fn data_without_a_final_terminator_is_unchanged() {
+        let cfg = config(false, true);
+        assert_eq!(search("^", &cfg, true, "a"), vec![line(1, "a", &[(0, 0)])]);
+        assert_eq!(search("^", &cfg, true, ""), vec![]);
+        // A trailing lone \r isn't a line terminator.
+        assert_eq!(
+            search("$", &cfg, true, "a\r"),
+            search("$", &cfg, false, "a\r")
+        );
+    }
+
+    #[test]
+    fn multiline_match_ending_at_eof_does_not_touch_the_final_empty_line() {
+        let cfg = config(true, true);
+        assert_eq!(
+            search("a\n", &cfg, true, "a\n"),
+            vec![line(1, "a", &[(0, 1)])]
+        );
+        assert_eq!(
+            search("a\n$", &cfg, true, "a\n"),
+            vec![line(1, "a", &[(0, 1)])]
+        );
+        assert_eq!(
+            search("^$", &cfg, true, "a\n\n"),
+            vec![line(2, "", &[(0, 0)]), line(3, "", &[(0, 0)])]
+        );
+    }
+
+    #[test]
+    fn context_includes_the_final_empty_line() {
+        let cfg = config(false, true);
+        let matcher = build_matcher(&["b".to_string()], &cfg).unwrap();
+        let after = search_lines(&matcher, true, true, 0, 2, b"a\nb\n");
+        assert_eq!(after[0].lines_after, Some(vec!["".to_string()]));
+        let after = search_lines(&matcher, true, false, 0, 2, b"a\nb\n");
+        assert_eq!(after[0].lines_after, Some(vec![]));
+
+        let matcher = build_matcher(&["^$".to_string()], &cfg).unwrap();
+        let before = search_lines(&matcher, true, true, 2, 0, b"a\nb\n");
+        assert_eq!(before.len(), 1);
+        assert_eq!(before[0].line_number, 3);
+        assert_eq!(
+            before[0].lines_before,
+            Some(vec!["a".to_string(), "b".to_string()])
+        );
     }
 }
